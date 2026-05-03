@@ -1,0 +1,13 @@
+name = "ZayForge"
+default_targets = ["win32", "win64", "appimage"]
+build_directory = "makelove-build"
+
+icon_file = "assets/images/icon.png"
+
+love_files = [
+    "+*",
+    "-*/.*",
+    "-./makelove-build/*",
+    "-./run.*",
+    "-./makelove.toml",
+]
