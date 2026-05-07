@@ -1,6 +1,7 @@
 -- ZayForge – Main Menu Module
 
 local logger = require("logger")
+local lang = require("lang")
 local menu = {}
 
 -- Button configuration
@@ -10,7 +11,12 @@ local MENU_BUTTONS_Y_RATIO = 0.45  -- Position buttons higher on screen (was 0.5
 
 -- Internal state
 local state = "main"
-local options = {"Single Player", "Multiplayer", "Options", "Exit"}
+local options = {
+    {key = "menu_singleplayer"},
+    {key = "menu_multiplayer"},
+    {key = "menu_options"},
+    {key = "menu_exit"}
+}
 local selected = 1
 
 local logoImage = nil
@@ -159,7 +165,7 @@ function menu.mousepressed(x, y, button)
     if state == "main" and button == 1 then
         for i, btn in ipairs(buttons) do
             if pointInRect(x, y, btn) then
-                if i == 2 or i==3 then return end -- Multiplayer and Options disabled
+                if i == 2 then return end -- Multiplayer and Options disabled
                 activateOption(i)
             end
         end
@@ -177,7 +183,7 @@ end
 -- ---- Internal ----
 
 function updateTooltip()
-    tooltipTarget = (selected == 2 or selected == 3) and 1 or 0
+    tooltipTarget = (selected == 2) and 1 or 0
 end
 
 function activateOption(idx)
@@ -185,6 +191,10 @@ function activateOption(idx)
         logger.info("Starting single player game")
         GameState.current = "game"
         GameState.game.load()
+    elseif idx == 3 then
+        logger.info("Opening options menu")
+        GameState.current = "options"
+        GameState.options.load()
     elseif idx == 4 then
         logger.info("Exiting game")
         love.event.quit()
@@ -249,7 +259,7 @@ end
 
 function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
     local glow = isSelected and glowAmount or 0
-    local isDisabled = (buttonIndex == 2 or buttonIndex == 3)
+    local isDisabled = (buttonIndex == 2)
 
     local fillBase, fillGlow, borderBase, borderGlow
     if isDisabled then
@@ -303,7 +313,8 @@ function menu.draw()
     drawLogo()
 
     for i, option in ipairs(options) do
-        drawButton(buttons[i], option, i == selected, selectedGlow, i)
+        local optionText = lang.t(option.key)
+        drawButton(buttons[i], optionText, i == selected, selectedGlow, i)
     end
 end
 
