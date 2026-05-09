@@ -60,9 +60,13 @@ ignore_list = [
 
     # Boon-specific files and directories
     "^*.toml$",
-    "^release$",
+    "^release.*$",
+    "^/release/$",
     "^makelove-build$",
-    "^.vscode$"
+    "^.vscode.*$",
+    "^/.vscode/$",
+    "^*.md$",
+    "^LICENSE$",
 ]
 
 # List of targets to build for
