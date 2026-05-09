@@ -6,6 +6,8 @@ If you already have VSCode, install the recommended extensions:
 1. https://marketplace.visualstudio.com/items?itemName=pixelbyte-studios.pixelbyte-love2d - To run ZayForge easily
 2. https://marketplace.visualstudio.com/items?itemName=pixelwar.love2dsnippets - Makes coding in Lua + Love2D easier =D
 3. https://marketplace.visualstudio.com/items?itemName=sumneko.lua - Lua Support
+3. https://marketplace.visualstudio.com/items?itemName=abyo-software.love2d-dev-tools - Love2D Support
+4. https://marketplace.visualstudio.com/items?itemName=yinfei.luahelper - more Lua Support
 
 ## Step 3 - Running
 if you install the [Love2D support extension](https://marketplace.visualstudio.com/items?itemName=pixelbyte-studios.pixelbyte-love2d) installed, run the default keybind `Alt+L`

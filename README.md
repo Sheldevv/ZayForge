@@ -30,9 +30,10 @@ If you use Visual Studio Code, the `pixelbyte-love2d` extension is recommended f
 
 Recommended VS Code extensions:
 
-- `pixelbyte-studios.pixelbyte-love2d` — run ZayForge easily
+- `pixelbyte-studios.pixelbyte-love2d` — run ZayForge easily (Windows & Mac ONLY)
 - `pixelwar.love2dsnippets` — Lua + Love2D snippets
-- `sumneko.lua` — Lua language support
+- `sumneko.lua` & `yinfei.luahelper` — Lua language support
+- `abyo-software.love2d-dev-tools` — Love2D Support (Cross-platform)
 
 ## Build
 

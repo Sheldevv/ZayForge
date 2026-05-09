@@ -1,3 +1,4 @@
+if os.getenv("LOVE2D_TOOLS") then pcall(require, "_love2d_tools_bridge") end
 -- ZayForge – Main Router
 -- A 2D top-down sandbox survival game (Minecraft x Mindustry)
 
