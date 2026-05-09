@@ -7,7 +7,7 @@
 authors = "ZayfireStudios - Lumbrerass, Zaiden Burns"
 
 # A description of your game. Not used in all builds.
-description = "Your description here."
+description = "ZayForge is a 2D top-down survival/RPG game inspired by Minecraft, built with LÖVE (Love2D). Explore, survive, and craft in a pixel-art world with top-down action and RPG elements."
 
 # An email to contact for support or more information. Not used
 # in all builds.
