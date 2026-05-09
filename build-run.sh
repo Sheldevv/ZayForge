@@ -20,6 +20,7 @@ has() {
 cd "$PROJECT_DIR"
 
 if has boon; then
+    rm -rf release 2>&1
     boon build .
 else
     warn "Boon is not installed. Skipping build step."
