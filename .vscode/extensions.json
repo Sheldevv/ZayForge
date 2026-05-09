@@ -2,6 +2,8 @@
     "recommendations": [
         "pixelbyte-studios.pixelbyte-love2d",
         "pixelwar.love2dsnippets",
-        "sumneko.lua"
+        "sumneko.lua",
+        "yinfei.luahelper",
+        "abyo-software.love2d-dev-tools"
     ]
 }
