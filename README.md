@@ -37,7 +37,7 @@ Recommended VS Code extensions:
 
 ## Build
 
-ZayForge uses `Boon` for packaging and building.
+ZayForge uses `Boon` for packaging and building or makelove.
 
 To build for a specific platform:
 

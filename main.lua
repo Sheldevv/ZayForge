@@ -4,6 +4,7 @@ if os.getenv("LOVE2D_TOOLS") then pcall(require, "_love2d_tools_bridge") end
 
 local logger = require("logger")
 local lang = require("lang")
+-- local lovefs = require("lovefs.lovefs")
 
 -- Global state
 GameState = {

@@ -17,7 +17,7 @@ love . # replace `love` with love binary location (unless in PATH)
 ```
 
 ## Step 3.5 - Building
-I recommend using my modified version of [Boon](https://github.com/camchenry/boon) https://github.com/Sheldevv/boon (Linux & Windows ONLY)
+I recommend using my modified version of [Boon](https://github.com/camchenry/boon) https://github.com/Sheldevv/boon (Linux & Windows ONLY) or makelove (cross-platform but python+pip is required)
 If you want to build to specific OS, run:
 ```bash
 boon build . --target <OS>
