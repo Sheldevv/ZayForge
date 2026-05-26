@@ -28,8 +28,8 @@ return {
     
     -- Audio Settings
     ["audio_master_volume"] = "Loudness",
-    ["audio_music_volume"] = "Music Slaps",
-    ["audio_sfx_volume"] = "Boom Boom",
+    ["audio_music_volume"] = "Music",
+    ["audio_sfx_volume"] = "SFX",
     ["audio_mute_all"] = "Silent Mode",
     
     -- Gameplay Settings

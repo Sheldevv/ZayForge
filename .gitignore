@@ -1,2 +1,4 @@
 makelove-build/
 release/
+build/
+*.AppImage
