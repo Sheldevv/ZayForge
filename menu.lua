@@ -2,6 +2,7 @@
 
 local logger = require("logger")
 local lang = require("lang")
+local online = require("online")
 local menu = {}
 
 -- Button configuration
@@ -42,9 +43,6 @@ local PARTICLE_COUNT = 80
 
 -- ---- Helpers ----
 
-local args = nil
-local username = nil
-
 local function createParticle()
     local ww, wh = love.graphics.getDimensions()
     return {
@@ -78,8 +76,17 @@ end
 function menu.load(argv)
     logger.info("Loading main menu...")
 
-    args = argv
-    username = args[1]
+    -- Parse online args if passed from main.lua (may be nil on direct launch)
+    if argv then
+        online.parseArgs(argv)
+    end
+
+    -- Fetch profile if online but not yet loaded
+    if online.enabled and not online.isOnline() then
+        coroutine.wrap(function()
+            online.fetchProfile()
+        end)()
+    end
 
     logoImage = love.graphics.newImage("assets/images/header.png")
 
@@ -338,9 +345,13 @@ function menu.draw()
         drawButton(buttons[i], optionText, i == selected, selectedGlow, i)
     end
 
-    if username then
+    if online.isOnline() then
+        local uname = online.getUsername() or "Player"
         love.graphics.setColor(0, 0.686, 1)
-        love.graphics.printf("Welcome, " .. username .. "!", 0, love.graphics.getHeight() /2 - 80, love.graphics.getWidth(), "center")
+        love.graphics.printf("Welcome, " .. uname .. "!", 0, love.graphics.getHeight() / 2 - 80, love.graphics.getWidth(), "center")
+    elseif online.enabled then
+        love.graphics.setColor(0.8, 0.6, 0.2)
+        love.graphics.printf("Connecting...", 0, love.graphics.getHeight() / 2 - 80, love.graphics.getWidth(), "center")
     end
 end
 

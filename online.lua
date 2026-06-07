@@ -105,7 +105,9 @@ local function request(method, path, opts)
             sink    = ltn12.sink.table(respBody),
         }
 
-        if statusCode and statusCode > 0 then
+        -- LuaSocket may return status as a string (e.g. "200")
+        local sc = tonumber(statusCode) or 0
+        if sc > 0 then
             local body = table.concat(respBody)
             return body, statusCode, nil
         end
