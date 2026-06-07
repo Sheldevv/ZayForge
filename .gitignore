@@ -2,3 +2,6 @@ makelove-build/
 release/
 build/
 *.AppImage
+love-android/
+.env*.local
+.zed/

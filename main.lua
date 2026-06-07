@@ -4,28 +4,45 @@ if os.getenv("LOVE2D_TOOLS") then pcall(require, "_love2d_tools_bridge") end
 
 local logger = require("logger")
 local lang = require("lang")
+local online = require("online")
 -- local lovefs = require("lovefs.lovefs")
 
 -- Global state
 GameState = {
-    current = "menu",  -- 'menu', 'game', 'options'
-    debug = false       -- Toggle debug info
+    current = "menu", -- 'menu', 'game', 'options'
+    debug = false     -- Toggle debug info
 }
 
-function love.load()
+local function applyMobileSettings()
+    local osName = love.system.getOS()
+    if osName == "Android" or osName == "iOS" then
+        -- Set fullscreen with orientation-aware dimensions
+        love.window.setFullscreen(true, "exclusive")
+
+        logger.info("Mobile mode enabled for: " .. osName)
+    end
+end
+
+function love.load(args)
     logger.info("Initializing ZayForge (" .. love.system.getOS() .. ")...")
-    
+
+    -- Parse online args from launcher: --online=true/false --account-id=<uuid>
+    online.parseArgs(args)
+
     -- Initialize language system first
     lang.init()
-    
+
     -- Load modules
     GameState.menu = require("menu")
     GameState.game = require("game")
     GameState.options = require("options")
-    
+
     -- Initialize starting module
-    GameState.menu.load()
-    
+    GameState.menu.load(args)
+
+    -- Apply mobile settings after modules are loaded so they can react
+    applyMobileSettings()
+
     logger.info("ZayForge initialized successfully!")
 end
 
@@ -50,13 +67,26 @@ function love.draw()
 end
 
 function love.keypressed(key)
+    if key == "back" then
+        if GameState.current == "game" then
+            -- pause / return to menu
+            GameState.current = "menu"
+            GameState.menu.load()
+        elseif GameState.current == "menu" then
+            love.event.quit()
+        elseif GameState.current == "options" then
+            GameState.current = "menu"
+            GameState.menu.load()
+        end
+        return
+    end
     -- Global debug toggle (don't return, pass to module too)
     if key == "f3" then
         GameState.debug = not GameState.debug
         logger.debug("Debug mode: " .. tostring(GameState.debug))
         -- Don't return - let the game module also know about F3 if needed
     end
-    
+
     if GameState.current == "menu" then
         GameState.menu.keypressed(key)
     elseif GameState.current == "game" then
@@ -64,6 +94,11 @@ function love.keypressed(key)
     elseif GameState.current == "options" then
         GameState.options.keypressed(key)
     end
+end
+
+function love.quit()
+    logger.info("ZayForge shutting down...")
+    logger.close()
 end
 
 function love.mousemoved(x, y, dx, dy)
@@ -101,5 +136,35 @@ function love.resize(w, h)
         GameState.game.resize(w, h)
     elseif GameState.current == "options" then
         GameState.options.resize(w, h)
+    end
+end
+
+function love.touchpressed(id, x, y, dx, dy, pressure)
+    if GameState.current == "menu" then
+        GameState.menu.touchpressed(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "game" then
+        GameState.game.touchpressed(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "options" then
+        GameState.options.touchpressed(id, x, y, dx, dy, pressure)
+    end
+end
+
+function love.touchreleased(id, x, y, dx, dy, pressure)
+    if GameState.current == "menu" then
+        GameState.menu.touchreleased(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "game" then
+        GameState.game.touchreleased(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "options" then
+        GameState.options.touchreleased(id, x, y, dx, dy, pressure)
+    end
+end
+
+function love.touchmoved(id, x, y, dx, dy, pressure)
+    if GameState.current == "menu" then
+        GameState.menu.touchmoved(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "game" then
+        GameState.game.touchmoved(id, x, y, dx, dy, pressure)
+    elseif GameState.current == "options" then
+        GameState.options.touchmoved(id, x, y, dx, dy, pressure)
     end
 end

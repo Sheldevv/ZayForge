@@ -7,15 +7,15 @@ local menu = {}
 -- Button configuration
 local BUTTON_WIDTH = 300
 local BUTTON_HEIGHT = 68
-local MENU_BUTTONS_Y_RATIO = 0.45  -- Position buttons higher on screen (was 0.50)
+local MENU_BUTTONS_Y_RATIO = 0.45 -- Position buttons higher on screen (was 0.50)
 
 -- Internal state
 local state = "main"
 local options = {
-    {key = "menu_singleplayer"},
-    {key = "menu_multiplayer"},
-    {key = "menu_options"},
-    {key = "menu_exit"}
+    { key = "menu_singleplayer" },
+    { key = "menu_multiplayer" },
+    { key = "menu_options" },
+    { key = "menu_exit" }
 }
 local selected = 1
 
@@ -42,6 +42,9 @@ local PARTICLE_COUNT = 80
 
 -- ---- Helpers ----
 
+local args = nil
+local username = nil
+
 local function createParticle()
     local ww, wh = love.graphics.getDimensions()
     return {
@@ -55,7 +58,7 @@ end
 
 local function pointInRect(px, py, rect)
     return px >= rect.x and px <= rect.x + rect.w and
-           py >= rect.y and py <= rect.y + rect.h
+        py >= rect.y and py <= rect.y + rect.h
 end
 
 local function drawRoundedRect(x, y, w, h, r, fillColor, borderColor, borderWidth)
@@ -72,22 +75,32 @@ end
 
 -- ---- Public functions ----
 
-function menu.load()
+function menu.load(argv)
     logger.info("Loading main menu...")
-    
+
+    args = argv
+    username = args[1]
+
     logoImage = love.graphics.newImage("assets/images/header.png")
-    
+
+    -- Scale font sizes for mobile screens
+    local ww, wh = love.graphics.getDimensions()
+    local scale = math.min(ww / 1280, wh / 720, 1.5)
+    local baseFontSize = math.floor(36 * scale)
+    local baseHintSize = math.floor(16 * scale)
+    local baseTooltipSize = math.floor(18 * scale)
+
     local success = pcall(function()
-        fontButton = love.graphics.newFont("assets/fonts/airstrike.ttf", 36)
-        fontHint = love.graphics.newFont("assets/fonts/airstrikeacad.ttf", 16)
-        fontTooltip = love.graphics.newFont("assets/fonts/airstrike.ttf", 18)
+        fontButton = love.graphics.newFont("assets/fonts/airstrike.ttf", baseFontSize)
+        fontHint = love.graphics.newFont("assets/fonts/airstrikeacad.ttf", baseHintSize)
+        fontTooltip = love.graphics.newFont("assets/fonts/airstrike.ttf", baseTooltipSize)
     end)
-    
+
     if not success or not fontButton then
         logger.warn("Custom fonts not found, using fallback")
-        fontButton = love.graphics.newFont(36)
-        fontHint = love.graphics.newFont(16)
-        fontTooltip = love.graphics.newFont(18)
+        fontButton = love.graphics.newFont(baseFontSize)
+        fontHint = love.graphics.newFont(baseHintSize)
+        fontTooltip = love.graphics.newFont(baseTooltipSize)
     end
 
     arrowCursor = love.mouse.getSystemCursor("arrow")
@@ -102,12 +115,16 @@ end
 
 function recalcButtons()
     local ww, wh = love.graphics.getDimensions()
+    local scale = math.min(ww / 1280, wh / 720, 1.5)
+    local btnW = math.floor(BUTTON_WIDTH * scale)
+    local btnH = math.floor(BUTTON_HEIGHT * scale)
+    local spacing = math.floor(buttonSpacing * scale)
     buttonYStart = wh * MENU_BUTTONS_Y_RATIO
     buttons = {}
     for i, _ in ipairs(options) do
-        local bx = ww / 2 - BUTTON_WIDTH / 2
-        local by = buttonYStart + (i - 1) * (BUTTON_HEIGHT + buttonSpacing)
-        buttons[i] = {x = bx, y = by, w = BUTTON_WIDTH, h = BUTTON_HEIGHT}
+        local bx = ww / 2 - btnW / 2
+        local by = buttonYStart + (i - 1) * (btnH + spacing)
+        buttons[i] = { x = bx, y = by, w = btnW, h = btnH }
     end
 end
 
@@ -237,24 +254,24 @@ end
 
 function drawTooltip(btn)
     if tooltipAlpha <= 0.01 then return end
-    
+
     local tooltipText = "(Coming Soon)"
     love.graphics.setFont(fontTooltip)
     local textW = fontTooltip:getWidth(tooltipText)
     local textH = fontTooltip:getHeight()
     local padding = 8
-    
+
     local tx = btn.x + btn.w + 16
     local ty = btn.y + (btn.h - textH) / 2
     local bgW, bgH = textW + padding * 2, textH + padding
-    
+
     love.graphics.setColor(0, 0, 0, 0.7 * tooltipAlpha)
     love.graphics.rectangle("fill", tx, ty, bgW, bgH, 8, 8)
     love.graphics.setColor(0.7, 0.7, 0.7, 0.5 * tooltipAlpha)
     love.graphics.setLineWidth(1)
     love.graphics.rectangle("line", tx, ty, bgW, bgH, 8, 8)
     love.graphics.setColor(1, 0.7, 0.3, tooltipAlpha)
-    love.graphics.printf(tooltipText, tx + padding, ty + padding/2, textW, "center")
+    love.graphics.printf(tooltipText, tx + padding, ty + padding / 2, textW, "center")
 end
 
 function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
@@ -263,29 +280,29 @@ function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
 
     local fillBase, fillGlow, borderBase, borderGlow
     if isDisabled then
-        fillBase, fillGlow = {0.15, 0.15, 0.15, 0.7}, {0.2, 0.2, 0.2, 0.7}
-        borderBase, borderGlow = {0.3, 0.3, 0.3, 0.5}, {0.4, 0.4, 0.4, 0.5}
+        fillBase, fillGlow = { 0.15, 0.15, 0.15, 0.7 }, { 0.2, 0.2, 0.2, 0.7 }
+        borderBase, borderGlow = { 0.3, 0.3, 0.3, 0.5 }, { 0.4, 0.4, 0.4, 0.5 }
     elseif buttonIndex == 4 then
-        fillBase, fillGlow = {0.08, 0.08, 0.12, 0.9}, {0.85, 0.15, 0.15, 0.85}
-        borderBase, borderGlow = {0.25, 0.25, 0.35, 1}, {1, 0.2, 0.2, 1}
+        fillBase, fillGlow = { 0.08, 0.08, 0.12, 0.9 }, { 0.85, 0.15, 0.15, 0.85 }
+        borderBase, borderGlow = { 0.25, 0.25, 0.35, 1 }, { 1, 0.2, 0.2, 1 }
     else
-        fillBase, fillGlow = {0.08, 0.08, 0.12, 0.9}, {0.95, 0.55, 0.1, 0.85}
-        borderBase, borderGlow = {0.25, 0.25, 0.35, 1}, {1, 0.7, 0.2, 1}
+        fillBase, fillGlow = { 0.08, 0.08, 0.12, 0.9 }, { 0.95, 0.55, 0.1, 0.85 }
+        borderBase, borderGlow = { 0.25, 0.25, 0.35, 1 }, { 1, 0.7, 0.2, 1 }
     end
 
     local function lerpColor(a, b, t)
-        return {a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t, a[4] + (b[4] - a[4]) * t}
+        return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t, a[4] + (b[4] - a[4]) * t }
     end
 
     local fill = lerpColor(fillBase, fillGlow, glow)
     local border = lerpColor(borderBase, borderGlow, glow)
 
-    drawRoundedRect(btn.x + 3, btn.y + 3, btn.w, btn.h, 20, {0,0,0,0.4}, nil, 0)
+    drawRoundedRect(btn.x + 3, btn.y + 3, btn.w, btn.h, 20, { 0, 0, 0, 0.4 }, nil, 0)
     drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 20, fill, nil, 0)
     drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 20, nil, border, 3)
 
     if glow > 0.01 and not isDisabled then
-        love.graphics.setColor(buttonIndex == 4 and {1, 0.3, 0.3, glow * 0.5} or {1, 0.75, 0.3, glow * 0.5})
+        love.graphics.setColor(buttonIndex == 4 and { 1, 0.3, 0.3, glow * 0.5 } or { 1, 0.75, 0.3, glow * 0.5 })
         love.graphics.setLineWidth(2)
         love.graphics.rectangle("line", btn.x + 2, btn.y + 2, btn.w - 4, btn.h - 4, 19, 19)
     end
@@ -293,18 +310,22 @@ function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
     love.graphics.setFont(fontButton)
     local textH = fontButton:getHeight()
     local textY = btn.y + (btn.h - textH) / 2
-    
+
     love.graphics.setColor(0, 0, 0, 0.5)
     love.graphics.printf(optionText, btn.x + 2, textY + 2, btn.w, "center")
-    
+
     local textColor
-    if isDisabled then textColor = {0.4, 0.4, 0.4, 1}
-    elseif isSelected then textColor = {0.05, 0.05, 0.1, 1}
-    else textColor = {0.95, 0.95, 0.95, 1} end
-    
+    if isDisabled then
+        textColor = { 0.4, 0.4, 0.4, 1 }
+    elseif isSelected then
+        textColor = { 0.05, 0.05, 0.1, 1 }
+    else
+        textColor = { 0.95, 0.95, 0.95, 1 }
+    end
+
     love.graphics.setColor(textColor)
     love.graphics.printf(optionText, btn.x, textY, btn.w, "center")
-    
+
     if isDisabled and isSelected then drawTooltip(btn) end
 end
 
@@ -316,6 +337,21 @@ function menu.draw()
         local optionText = lang.t(option.key)
         drawButton(buttons[i], optionText, i == selected, selectedGlow, i)
     end
+
+    if username then
+        love.graphics.setColor(0, 0.686, 1)
+        love.graphics.printf("Welcome, " .. username .. "!", 0, love.graphics.getHeight() /2 - 80, love.graphics.getWidth(), "center")
+    end
 end
+
+function menu.touchpressed(id, x, y, dx, dy, pressure)
+    menu.mousepressed(x, y, 1) -- simulate left click
+end
+
+function menu.touchmoved(id, x, y, dx, dy, pressure)
+    menu.mousemoved(x, y, dx, dy)
+end
+
+function menu.touchreleased() end
 
 return menu
