@@ -4,10 +4,8 @@
 -- (same DB the launcher/server use).  Fetches player profile:
 -- username and 16x16 PNG avatar.
 --
--- Connection string:
---   postgresql://neondb_owner:npg_KZHr0QmOF6Vw@
---     ep-falling-cherry-aqiltlp5.c-8.us-east-1.aws.neon.tech/
---     neondb?sslmode=require
+-- Connection string is passed via CLI: --db-url=postgresql://...
+-- (Not embedded — prevents credential extraction from the .love binary)
 
 local logger = require("logger")
 local pgmoon = require("pgmoon.init")
@@ -15,7 +13,7 @@ local pgmoon = require("pgmoon.init")
 local online = {}
 
 -- ===== Configuration =====
-online.DB_URL = "postgresql://neondb_owner:npg_KZHr0QmOF6Vw@ep-falling-cherry-aqiltlp5.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require"
+online.DB_URL = nil  -- set via --db-url=<dsn> CLI arg
 
 -- ===== State =====
 online.enabled = false              -- true if --online=true was passed
@@ -28,23 +26,39 @@ online.lastFetchError = nil         -- most recent error string
 
 local db = nil
 
--- ===== Parse Neon DSN =====
+-- ===== Parse PostgreSQL DSN =====
+-- Handles: postgresql://user:password@host:port/dbname?sslmode=require
 
 local function parseDSN(dsn)
-    local user, pass, host, port, dbname, sslmode
-    user = dsn:match("://([^:]+)")
-    pass = dsn:match("://[^:]+:([^@]+)")
-    host = dsn:match("@([^:]+)")
-    port = dsn:match(":([0-9]+)/") or "5432"
-    dbname = dsn:match("/([^?]+)")
-    sslmode = dsn:match("sslmode=([^&]+)")
+    -- Strip protocol prefix
+    local rest = dsn:match("^[a-z]+://(.+)$") or dsn
+
+    -- Split credentials@host from path
+    local creds, hostPort, dbinfo = rest:match("^([^@]+)@([^/]+)/?(.*)$")
+    if not creds then
+        return nil, "invalid DSN format"
+    end
+
+    -- user:password
+    local user, password = creds:match("^([^:]+):(.+)$")
+    if not user then user = creds end
+
+    -- host:port
+    local host, port = hostPort:match("^([^:]+):?(%d*)$")
+    port = (port and port ~= "") and tonumber(port) or 5432
+
+    -- database and query params
+    local dbname, params = dbinfo:match("^([^%?]*)/?%??(.*)$")
+    if not dbname or dbname == "" then dbname = dbinfo end
+    local sslmode = params:match("sslmode=([^&]*)")
+
     return {
         user = user,
-        password = pass,
+        password = password,
         host = host,
-        port = tonumber(port),
+        port = port,
         database = dbname,
-        ssl = sslmode == "require",
+        ssl = (sslmode == "require"),
     }
 end
 
@@ -57,25 +71,34 @@ end
 -- and the game runs offline with the blue circle fallback.
 local function connectDB()
     if db then return true end
+    if not online.DB_URL then
+        logger.warn("No DB URL configured (--db-url not passed)")
+        return false
+    end
 
-    local cfg = parseDSN(online.DB_URL)
-    logger.info(string.format("Connecting to %s:%s/%s as %s (ssl=%s)",
+    local cfg, err = parseDSN(online.DB_URL)
+    if not cfg then
+        logger.warn("Failed to parse DSN: " .. tostring(err))
+        return false
+    end
+
+    logger.info(string.format("Connecting to %s:%d/%s as %s (ssl=%s)",
         cfg.host, cfg.port, cfg.database, cfg.user, tostring(cfg.ssl)))
 
-    local ok, err = pcall(function()
+    local ok, connErr = pcall(function()
         db = pgmoon.new(cfg)
         assert(db:connect())
     end)
 
     if not ok then
-        logger.warn("DB connection failed: " .. tostring(err))
+        logger.warn("DB connection failed: " .. tostring(connErr))
         logger.warn("Neon requires LuaSec (luasec) for SSL — install it:")
         logger.warn("  Ubuntu: sudo apt install lua-sec")
         logger.warn("  macOS:  brew install luasec")
         logger.warn("  Or:     luarocks install luasec")
         logger.warn("Running in offline mode (blue circle player)")
         db = nil
-        online.lastFetchError = tostring(err)
+        online.lastFetchError = tostring(connErr)
         return false
     end
 
@@ -117,12 +140,21 @@ function online.parseArgs(rawArgs)
             online.token = val
             logger.debug("Token provided directly")
         end
+
+        val = arg:match("^%-%-db%-url=(.+)$")
+        if val then
+            online.DB_URL = val
+            logger.debug("DB URL set")
+        end
     end
 
     if not online.enabled then
         logger.info("Online mode disabled (--online not set or false)")
     elseif not online.accountId then
         logger.warn("Online mode enabled but --account-id missing, disabling online")
+        online.enabled = false
+    elseif not online.DB_URL then
+        logger.warn("Online mode enabled but --db-url missing, disabling online")
         online.enabled = false
     end
 end
