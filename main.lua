@@ -98,6 +98,7 @@ end
 
 function love.quit()
     logger.info("ZayForge shutting down...")
+    online.shutdown()
     logger.close()
 end
 

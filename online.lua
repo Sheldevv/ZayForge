@@ -1,23 +1,21 @@
 -- online.lua – ZayForge API client for Love2D
 --
--- Talks to https://zayforge.xyz/api to fetch player profile data
--- (username, avatar, etc.) when the game is launched with --online=true
--- and --account-id=<id> by the ZayForge Launcher.
+-- Connects directly to the Neon PostgreSQL database via pgmoon
+-- (same DB the launcher/server use).  Fetches player profile:
+-- username and 16x16 PNG avatar.
 --
--- Relies on Löve2D's built-in luasocket (socket.http / socket.url).
+-- Connection string:
+--   postgresql://neondb_owner:npg_KZHr0QmOF6Vw@
+--     ep-falling-cherry-aqiltlp5.c-8.us-east-1.aws.neon.tech/
+--     neondb?sslmode=require
 
 local logger = require("logger")
+local pgmoon = require("pgmoon.init")
 
 local online = {}
 
 -- ===== Configuration =====
--- Primary: local API server started by the ZayForge Launcher (localhost:3131)
--- Fallback: public zayforge.xyz API for standalone / non-launcher usage
-online.API_BASE = "http://localhost:3131/api"
-online.REQUEST_TIMEOUT = 3 -- seconds (low: local API should respond fast)
-
--- Override with public API if the launcher API is unreachable
-online.FALLBACK_API = "https://zayforge.xyz/api"
+online.DB_URL = "postgresql://neondb_owner:npg_KZHr0QmOF6Vw@ep-falling-cherry-aqiltlp5.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
 -- ===== State =====
 online.enabled = false              -- true if --online=true was passed
@@ -28,94 +26,68 @@ online.avatarImage = nil            -- loaded love.graphics image from avatar da
 online.avatarLoadFailed = false     -- true if avatar decoding failed
 online.lastFetchError = nil         -- most recent error string
 
--- ===== Dependencies (loaded lazily) =====
-local http
-local ltn12
-local json
+local db = nil
 
--- ===== Internal Helpers =====
+-- ===== Parse Neon DSN =====
 
-local function initDeps()
-    if http and ltn12 then return true end
-    local ok
-    ok, http = pcall(require, "socket.http")
+local function parseDSN(dsn)
+    local user, pass, host, port, dbname, sslmode
+    user = dsn:match("://([^:]+)")
+    pass = dsn:match("://[^:]+:([^@]+)")
+    host = dsn:match("@([^:]+)")
+    port = dsn:match(":([0-9]+)/") or "5432"
+    dbname = dsn:match("/([^?]+)")
+    sslmode = dsn:match("sslmode=([^&]+)")
+    return {
+        user = user,
+        password = pass,
+        host = host,
+        port = tonumber(port),
+        database = dbname,
+        ssl = sslmode == "require",
+    }
+end
+
+-- ===== Database Connection =====
+
+-- pgmoon uses luasocket. The sslhandshake call requires LuaSec
+-- (require("ssl")) which is NOT bundled with stock Love2D.
+-- On systems where LuaSec is available (installed via apt/brew/luarocks),
+-- SSL connections to Neon will work.  Otherwise connectDB() fails gracefully
+-- and the game runs offline with the blue circle fallback.
+local function connectDB()
+    if db then return true end
+
+    local cfg = parseDSN(online.DB_URL)
+    logger.info(string.format("Connecting to %s:%s/%s as %s (ssl=%s)",
+        cfg.host, cfg.port, cfg.database, cfg.user, tostring(cfg.ssl)))
+
+    local ok, err = pcall(function()
+        db = pgmoon.new(cfg)
+        assert(db:connect())
+    end)
+
     if not ok then
-        logger.warn("socket.http not available, online features disabled")
+        logger.warn("DB connection failed: " .. tostring(err))
+        logger.warn("Neon requires LuaSec (luasec) for SSL — install it:")
+        logger.warn("  Ubuntu: sudo apt install lua-sec")
+        logger.warn("  macOS:  brew install luasec")
+        logger.warn("  Or:     luarocks install luasec")
+        logger.warn("Running in offline mode (blue circle player)")
+        db = nil
+        online.lastFetchError = tostring(err)
         return false
     end
-    ok, ltn12 = pcall(require, "ltn12")
-    if not ok then
-        logger.warn("ltn12 not available, online features disabled")
-        return false
-    end
-    http.TIMEOUT = online.REQUEST_TIMEOUT
+
+    logger.info("Connected to Neon PostgreSQL")
     return true
 end
 
-local function initJson()
-    if json then return true end
-    local ok
-    ok, json = pcall(require, "dkjson")
-    if not ok then
-        ok, json = pcall(require, "json")
+local function disconnectDB()
+    if db then
+        pcall(function() db:disconnect() end)
+        db = nil
     end
-    if not ok then
-        logger.warn("JSON library not available, online features disabled")
-        return false
-    end
-    return true
-end
-
-local function decodeJSON(str)
-    if not initJson() then return nil end
-    local obj, pos, err = json.decode(str, 1, nil)
-    if err then
-        logger.warn("JSON decode error: " .. tostring(err))
-        return nil
-    end
-    return obj
-end
-
-local function encodeJSON(tbl)
-    if not initJson() then return "{}" end
-    return json.encode(tbl)
-end
-
--- Perform an HTTP request. Returns body string, HTTP status code, and optional error.
--- Tries the local launcher API first, falls back to zayforge.xyz.
-local function request(method, path, opts)
-    if not initDeps() then return nil, 0, "deps unavailable" end
-
-    opts = opts or {}
-    local headers = opts.headers or {}
-    headers["accept"] = "application/json"
-    local reqBody = opts.body
-
-    -- Try local launcher API first, then fallback to public API
-    local urls = { online.API_BASE, online.FALLBACK_API }
-
-    for _, baseUrl in ipairs(urls) do
-        local url = baseUrl .. path
-        local respBody = {}
-        local _, statusCode = http.request {
-            url     = url,
-            method  = method,
-            headers = headers,
-            source  = reqBody and ltn12.source.string(reqBody) or nil,
-            sink    = ltn12.sink.table(respBody),
-        }
-
-        -- LuaSocket may return status as a string (e.g. "200")
-        local sc = tonumber(statusCode) or 0
-        if sc > 0 then
-            local body = table.concat(respBody)
-            return body, statusCode, nil
-        end
-
-        logger.debug("API unreachable at " .. baseUrl .. ", trying fallback...")
-    end
-
-    return nil, 0, "all endpoints unreachable"
 end
 
 -- ===== Public API =====
@@ -155,9 +127,7 @@ function online.parseArgs(rawArgs)
     end
 end
 
--- Fetch the user profile from the API.
--- Uses /api/auth/me with Authorization header if token provided, otherwise
--- uses x-zayforge-account-id header (requires API support for that path).
+-- Fetch the user profile directly from the Neon database via pgmoon.
 function online.fetchProfile()
     if not online.enabled then return false end
     if not online.accountId then
@@ -165,46 +135,47 @@ function online.fetchProfile()
         return false
     end
 
-    local path = "/auth/me"
-    local headers = {}
-
-    if online.token then
-        headers["authorization"] = "Bearer " .. online.token
-    else
-        headers["x-zayforge-account-id"] = online.accountId
-    end
-
-    local bodyStr, status = request("GET", path, { headers = headers })
-
-    if not bodyStr or status == 0 then
-        online.lastFetchError = "Network error"
-        logger.warn("Failed to fetch profile: network error")
+    if not connectDB() then
         return false
     end
 
-    if status ~= 200 then
-        online.lastFetchError = "HTTP " .. tostring(status)
-        logger.warn("Failed to fetch profile: HTTP " .. tostring(status))
+    local ok, result = pcall(function()
+        -- Query the User table by id
+        return db:query([[
+            SELECT id, username, email, avatar, "createdAt"
+            FROM "User"
+            WHERE id = $1
+            LIMIT 1
+        ]], online.accountId)
+    end)
+
+    if not ok then
+        online.lastFetchError = tostring(result)
+        logger.warn("Profile query failed: " .. online.lastFetchError)
         return false
     end
 
-    local data = decodeJSON(bodyStr)
-    if not data then
-        online.lastFetchError = "JSON parse error"
-        logger.warn("Failed to parse profile response")
+    if #result == 0 then
+        online.lastFetchError = "User not found"
+        logger.warn("No user with id: " .. online.accountId)
         return false
     end
 
-    if not data.ok then
-        online.lastFetchError = data.error or "Unknown API error"
-        logger.warn("API error: " .. (data.error or "unknown"))
-        return false
-    end
-
-    online.user = data.user
+    local row = result[1]
+    online.user = {
+        id = row.id,
+        username = row.username,
+        email = row.email,
+        avatar = row.avatar,
+        createdAt = row.createdAt or row.createdat,
+    }
     online.lastFetchError = nil
 
+    -- Load avatar image from base64 data URL if present
     online._loadAvatarImage()
+
+    -- Keep connection alive for future queries
+    -- db:keepalive() -- pgmoon sets keepalive per-query
 
     logger.info("Online profile loaded: " .. (online.user.username or "unknown"))
     return true
@@ -311,6 +282,12 @@ end
 function online.getUsername()
     if online.user then return online.user.username end
     return nil
+end
+
+-- Cleanup on game exit
+function online.shutdown()
+    disconnectDB()
+    logger.info("Online module shut down")
 end
 
 return online

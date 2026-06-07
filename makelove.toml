@@ -5,7 +5,8 @@ icon_file = "assets/images/icon.png"
 love_version = "11.5"
 
 love_files = [
-    "::git-ls-tree::",
+    #"::git-ls-tree::",
+    "./*",
     "-*/.*",
     "-./*.toml",
     "-./*.md",

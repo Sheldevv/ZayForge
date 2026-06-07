@@ -37,7 +37,7 @@ Recommended VS Code extensions:
 
 ## Build
 
-ZayForge uses `Boon` for packaging and building or makelove.
+ZayForge uses `Boon` or `makelove` for packaging and building or makelove.
 
 To build for a specific platform:
 
@@ -50,8 +50,13 @@ To build for all available targets (Linux, macOS, Windows, Love):
 ```bash
 boon build .
 ```
+or
+```bash
+makelove
+```
 
 > Note: A modified Boon fork is recommended: https://github.com/Sheldevv/boon
+> or just use [makelove](https://github.com/pfirsich/makelove)
 
 ## Release
 
@@ -62,6 +67,6 @@ The `release/` folder contains packaged builds, including `ZayForge.love` and a 
 
 ## Credits
 ZayForge is made by [Zayfire Studios](https://zayfirestudios.com/) <br>
-Coder: [Sheldevv Pierre](https://discord.com/users/1170755742521905326) <br>
+Coder: [Sheldevv Pierre](https://discord.com/users/1170755742521905326), [Maki Zushi](https://discord.com/users/1225926203815231488) <br>
 Music: [Zaiden Burns](https://discord.com/users/959235165375307837) <br>
 Idea: [Sheldevv](https://discord.com/users/1170755742521905326) + [Mateo](https://discord.com/users/1321676414126391346)
