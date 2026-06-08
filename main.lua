@@ -184,3 +184,9 @@ function love.touchmoved(id, x, y, dx, dy, pressure)
         GameState.options.touchmoved(id, x, y, dx, dy, pressure)
     end
 end
+
+function love.textinput(t)
+    if GameState.current == "menu" then
+        GameState.menu.textinput(t)
+    end
+end

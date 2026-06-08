@@ -26,6 +26,16 @@ local worldSelectSelected = 1
 local worldList = {}      -- Cached list of worlds for display
 local worldListButtons = {} -- Hit areas for each world row
 
+-- Create world state
+local createName = "New World"
+local createSeed = ""
+local createGamemode = "survival"
+local nameFieldFocused = true
+local createButtons = {}
+
+-- Forward declarations for create world screen
+local drawCreateWorld, handleCreateWorldClick
+
 local logoImage = nil
 
 -- Animation
@@ -158,6 +168,17 @@ function menu.update(dt)
 end
 
 function menu.keypressed(key)
+    if state == "create_world" then
+        if key == "escape" or key == "back" then
+            state = "world_select"
+            refreshWorldList()
+        elseif key == "return" or key == "kpenter" then
+            doCreateWorld()
+        elseif key == "tab" then
+            createGamemode = (createGamemode == "survival") and "creative" or "survival"
+        end
+        return
+    end
     if state == "world_select" then
         local maxItems = #worldList + 1 -- +1 for "Create New"
         if key == "up" then
@@ -206,6 +227,9 @@ function menu.keypressed(key)
 end
 
 function menu.mousemoved(x, y, dx, dy)
+    if state == "create_world" or state == "world_select" then
+        -- Handled by drawing
+    end
     if state == "world_select" then
         for i, btn in ipairs(worldListButtons) do
             if pointInRect(x, y, btn) then
@@ -233,6 +257,10 @@ function menu.mousemoved(x, y, dx, dy)
 end
 
 function menu.mousepressed(x, y, button)
+    if state == "create_world" and button == 1 then
+        handleCreateWorldClick(x, y)
+        return
+    end
     if state == "world_select" and button == 1 then
         for i, btn in ipairs(worldListButtons) do
             if pointInRect(x, y, btn) then
@@ -305,14 +333,27 @@ end
 
 function startWorld(slot, name)
     logger.info("Starting world: " .. (name or "New World"))
+    local meta = saveLib.getSaves()[slot]
+    local gm = (meta and meta.gamemode) or "survival"
     GameState.current = "game"
-    GameState.game.load({slot = slot, name = name})
+    GameState.game.load({slot = slot, name = name, gamemode = gm})
 end
 
 function createNewWorld()
+    state = "create_world"
+    createName = "World " .. tostring(saveLib.getNextSlot())
+    createSeed = ""
+    createGamemode = "survival"
+    worldSelectSelected = 1
+end
+
+function doCreateWorld()
     local slot = saveLib.getNextSlot()
-    local name = "World " .. tostring(slot)
-    startWorld(slot, name)
+    local seed = (createSeed ~= "") and tonumber(createSeed) or math.floor(os.time())
+    local name = createName ~= "" and createName or "World " .. tostring(slot)
+    -- Start the game with gamemode config
+    GameState.current = "game"
+    GameState.game.load({slot = slot, name = name, gamemode = createGamemode})
 end
 
 -- ---- Drawing ----
@@ -431,6 +472,10 @@ function menu.draw()
         drawWorldSelect()
         return
     end
+    if state == "create_world" then
+        drawCreateWorld()
+        return
+    end
 
     drawBackground()
     drawLogo()
@@ -451,6 +496,10 @@ function menu.draw()
 end
 
 function menu.touchpressed(id, x, y, dx, dy, pressure)
+    if state == "create_world" then
+        menu.mousepressed(x, y, 1)
+        return
+    end
     if state == "world_select" then
         menu.mousepressed(x, y, 1)
         return
@@ -459,6 +508,10 @@ function menu.touchpressed(id, x, y, dx, dy, pressure)
 end
 
 function menu.touchmoved(id, x, y, dx, dy, pressure)
+    if state == "create_world" then
+        menu.mousemoved(x, y, dx, dy)
+        return
+    end
     if state == "world_select" then
         menu.mousemoved(x, y, dx, dy)
         return
@@ -514,7 +567,7 @@ function drawWorldSelect()
         -- World name
         love.graphics.setFont(smallFont)
         love.graphics.setColor(1, 1, 1, 0.95)
-        love.graphics.print(w.name or "Unknown", rowX + 14, y + 6)
+        love.graphics.print((w.name or "Unknown") .. (w.gamemode == "creative" and " [Creative]" or ""), rowX + 14, y + 6)
 
         -- Play time / info
         love.graphics.setFont(tinyFont)
@@ -563,6 +616,111 @@ function drawWorldSelect()
     love.graphics.setFont(tinyFont)
     love.graphics.setColor(0.5, 0.5, 0.6)
     love.graphics.printf("ESC: Back to menu  |  Enter: Load  |  X: Delete", 0, wh - 30, ww, "center")
+end
+
+-- ---- Text Input ----
+
+function menu.textinput(t)
+    if state == "create_world" and nameFieldFocused then
+        if t == "/" or t == "\\" then return end
+        createName = createName .. t
+    end
+end
+
+-- ---- Create World Screen ----
+
+drawCreateWorld = function()
+    local ww, wh = love.graphics.getDimensions()
+    local scale = math.min(ww / 1280, wh / 720, 1.5)
+    love.graphics.setColor(0.04, 0.04, 0.10)
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    local titleFont = love.graphics.newFont(math.floor(32 * scale))
+    love.graphics.setFont(titleFont)
+    love.graphics.setColor(0.95, 0.95, 0.95)
+    love.graphics.printf("Create New World", 0, 24, ww, "center")
+    local fieldW, fieldH = math.floor(400 * scale), math.floor(40 * scale)
+    local fieldX = (ww - fieldW) / 2
+    local rowH = math.floor(50 * scale)
+    local y = math.floor(90 * scale)
+    local labelFont = love.graphics.newFont(math.floor(16 * scale))
+    local inputFont = love.graphics.newFont(math.floor(18 * scale))
+    createButtons = {}
+
+    -- Name field
+    love.graphics.setFont(labelFont); love.graphics.setColor(0.8, 0.8, 0.8)
+    love.graphics.print("World Name:", fieldX, y); y = y + rowH
+    love.graphics.setColor(nameFieldFocused and {0.15,0.15,0.25} or {0.08,0.08,0.14})
+    love.graphics.rectangle("fill", fieldX, y, fieldW, fieldH, 6, 6)
+    love.graphics.setColor(nameFieldFocused and {0.4,0.6,1} or {0.3,0.3,0.4})
+    love.graphics.setLineWidth(1.5); love.graphics.rectangle("line", fieldX, y, fieldW, fieldH, 6, 6)
+    love.graphics.setFont(inputFont); love.graphics.setColor(1,1,1)
+    love.graphics.print(createName .. (nameFieldFocused and "_" or ""), fieldX + 10, y + 8)
+    createButtons[#createButtons+1] = {x=fieldX, y=y, w=fieldW, h=fieldH, id="name"}
+    y = y + fieldH + 12
+
+    -- Seed
+    love.graphics.setFont(labelFont); love.graphics.setColor(0.8,0.8,0.8)
+    love.graphics.print("Seed (empty = random):", fieldX, y); y = y + rowH
+    love.graphics.setColor(0.08,0.08,0.14); love.graphics.rectangle("fill",fieldX,y,fieldW,fieldH,6,6)
+    love.graphics.setColor(0.3,0.3,0.4); love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line",fieldX,y,fieldW,fieldH,6,6)
+    love.graphics.setFont(inputFont); love.graphics.setColor(1,1,1)
+    love.graphics.print(createSeed~="" and createSeed or "Random",fieldX+10,y+8)
+    createButtons[#createButtons+1] = {x=fieldX,y=y,w=fieldW,h=fieldH,id="seed"}
+    y = y + fieldH + 16
+
+    -- Gamemode
+    love.graphics.setFont(labelFont); love.graphics.setColor(0.8,0.8,0.8)
+    love.graphics.print("Gamemode:", fieldX, y); y = y + rowH
+    local btnW = math.floor(180*scale)
+    local sBtn = {x=fieldX,y=y,w=btnW,h=fieldH,id="survival"}
+    createButtons[#createButtons+1] = sBtn
+    love.graphics.setColor(createGamemode=="survival" and {0.15,0.4,0.7,0.8} or {0.08,0.08,0.14,0.7})
+    love.graphics.rectangle("fill",sBtn.x,sBtn.y,sBtn.w,sBtn.h,6,6)
+    love.graphics.setColor(1,1,1); love.graphics.printf("Survival",sBtn.x,sBtn.y+10,sBtn.w,"center")
+    local cBtn = {x=fieldX+btnW+16,y=y,w=btnW,h=fieldH,id="creative"}
+    createButtons[#createButtons+1] = cBtn
+    love.graphics.setColor(createGamemode=="creative" and {0.7,0.4,0.15,0.8} or {0.08,0.08,0.14,0.7})
+    love.graphics.rectangle("fill",cBtn.x,cBtn.y,cBtn.w,cBtn.h,6,6)
+    love.graphics.setColor(1,1,1); love.graphics.printf("Creative",cBtn.x,cBtn.y+10,cBtn.w,"center")
+    y = y + fieldH + 20
+
+    -- Create button
+    local crBtn = {x=fieldX,y=y,w=fieldW,h=fieldH+4,id="create"}
+    createButtons[#createButtons+1] = crBtn
+    love.graphics.setColor(0.15,0.55,0.25,0.85); love.graphics.rectangle("fill",crBtn.x,crBtn.y,crBtn.w,crBtn.h,8,8)
+    love.graphics.setColor(0.3,0.8,0.3,0.6); love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line",crBtn.x,crBtn.y,crBtn.w,crBtn.h,8,8)
+    love.graphics.setFont(inputFont); love.graphics.setColor(1,1,1)
+    love.graphics.printf("Create World",crBtn.x,crBtn.y+12,crBtn.w,"center"); y=y+fieldH+12
+
+    -- Back button
+    local bkBtn = {x=fieldX,y=y,w=fieldW,h=fieldH-4,id="back"}
+    createButtons[#createButtons+1] = bkBtn
+    love.graphics.setColor(0.08,0.08,0.14,0.8); love.graphics.rectangle("fill",bkBtn.x,bkBtn.y,bkBtn.w,bkBtn.h,8,8)
+    love.graphics.setColor(0.3,0.3,0.4,0.6); love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line",bkBtn.x,bkBtn.y,bkBtn.w,bkBtn.h,8,8)
+    love.graphics.setFont(labelFont); love.graphics.setColor(0.8,0.8,0.8)
+    love.graphics.printf("Back",bkBtn.x,bkBtn.y+10,bkBtn.w,"center")
+
+    love.graphics.setFont(love.graphics.newFont(math.floor(12*scale)))
+    love.graphics.setColor(0.5,0.5,0.6)
+    love.graphics.printf("Enter: Create | Tab: Switch Gamemode | ESC: Back",0,wh-25,ww,"center")
+end
+
+handleCreateWorldClick = function(x, y)
+    for _, btn in ipairs(createButtons) do
+        if pointInRect(x, y, btn) then
+            if btn.id == "name" then nameFieldFocused = true
+            elseif btn.id == "seed" then nameFieldFocused = false
+            elseif btn.id == "survival" then createGamemode = "survival"
+            elseif btn.id == "creative" then createGamemode = "creative"
+            elseif btn.id == "create" then doCreateWorld()
+            elseif btn.id == "back" then state = "world_select"; refreshWorldList()
+            end
+            return
+        end
+    end
 end
 
 return menu

@@ -11,7 +11,7 @@ local save = {}
 local SAVE_ROOT = nil
 
 -- ===== State =====
-save.saves = {}  -- {slot, name, seed, playTime, lastPlayed, version}
+save.saves = {}  -- {slot, name, seed, gamemode, playTime, lastPlayed, version}
 
 -- ===== Directory Setup =====
 
@@ -75,7 +75,7 @@ local function serializeTable(tbl)
     local function ser(v)
         local t = type(v)
         if t == "number" then return "n" .. tostring(v)
-        elseif t == "string" then return "s" .. v:len() .. ":" .. v
+        elseif t == "string" then return "s" .. #v .. ":" .. v
         elseif t == "boolean" then return v and "b1" or "b0"
         elseif t == "table" then
             local parts = { "t" }
@@ -226,7 +226,7 @@ end
 -- ===== World Save / Load =====
 
 -- Save current world to a slot
-function save.saveWorld(slot, name, world, player, gameState, playTime)
+function save.saveWorld(slot, name, gamemode, world, player, gameState, playTime)
     local root = getSaveRoot()
     local slotDir = root .. "/slot_" .. tostring(slot)
     ensureDir(slotDir)
@@ -248,6 +248,7 @@ function save.saveWorld(slot, name, world, player, gameState, playTime)
         inventory = player.inventory,
         seed = world.seed,
         dayTime = gameState.dayTime or 0,
+        gamemode = gamemode or "survival",
     })
     local stateFile = io.open(slotDir .. "/state.dat", "wb")
     if stateFile then
@@ -260,6 +261,7 @@ function save.saveWorld(slot, name, world, player, gameState, playTime)
         slot = slot,
         name = name,
         seed = world.seed,
+        gamemode = gamemode or "survival",
         playTime = playTime or 0,
         lastPlayed = os.date("%Y-%m-%d %H:%M:%S"),
         version = "1.0",

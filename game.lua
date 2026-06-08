@@ -164,6 +164,7 @@ local placementMode = nil -- What we're currently placing
 local selectedTile = nil  -- Mouse-over tile coords
 local saveSlot = nil       -- Current save slot (nil = unsaved new world)
 local worldName = "World"  -- Display name for current world
+local gamemode = "survival" -- "survival" or "creative"
 local playTime = 0         -- Total play time in seconds
 local autoSaveTimer = 0    -- Countdown to next auto-save
 local saveLib = nil        -- Will be set to require("save")
@@ -322,6 +323,8 @@ function game.load(config)
     -- Determine world source: load from save or generate new
     local loadedSlot = config.slot
     local loadedName = config.name or "World"
+    local loadedGamemode = config.gamemode or "survival"
+    gamemode = loadedGamemode
 
     if loadedSlot and saveLib.getSaves()[loadedSlot] then
         -- Load existing world
@@ -338,6 +341,7 @@ function game.load(config)
             Player.equippedSlot = data.state.equippedSlot or 1
             Player.inventory = data.state.inventory or {}
             dayTime = data.state.dayTime or 0
+            gamemode = data.state.gamemode or loadedGamemode
             saveSlot = loadedSlot
             worldName = loadedName
             playTime = saveLib.getSaves()[loadedSlot].playTime or 0
@@ -359,7 +363,7 @@ function game.load(config)
         addToInventory("stone", 5)
         -- Auto-save new world immediately
         if saveSlot then
-            saveLib.saveWorld(saveSlot, worldName, World, Player, {dayTime = dayTime}, playTime)
+            saveLib.saveWorld(saveSlot, worldName, gamemode, World, Player, {dayTime = dayTime}, playTime)
         end
     end
 
@@ -435,10 +439,12 @@ function game.update(dt)
     local mx, my = love.mouse.getPosition()
     selectedTile = { screenToWorld(mx, my) }
 
-    -- Hunger decreases over time
-    Player.hunger = math.max(0, Player.hunger - dt * 0.5)
-    if Player.hunger <= 0 then
-        Player.health = math.max(0, Player.health - dt * 2)
+    -- Hunger decreases over time (survival only)
+    if gamemode == "survival" then
+        Player.hunger = math.max(0, Player.hunger - dt * 0.5)
+        if Player.hunger <= 0 then
+            Player.health = math.max(0, Player.health - dt * 2)
+        end
     end
 
     -- Update debug info
@@ -598,12 +604,13 @@ function drawUI()
 
     -- World name & save status
     love.graphics.setFont(fonts.small)
+    local gmLabel = (gamemode == "creative") and " [Creative]" or ""
     if saveSlot then
         love.graphics.setColor(0.6, 0.8, 1)
-        love.graphics.print(worldName .. " | " .. math.floor(playTime / 60) .. "m", 20, 55)
+        love.graphics.print(worldName .. gmLabel .. " | " .. math.floor(playTime / 60) .. "m", 20, 55)
     else
         love.graphics.setColor(0.8, 0.6, 0.2)
-        love.graphics.print(worldName .. " (unsaved)", 20, 55)
+        love.graphics.print(worldName .. gmLabel .. " (unsaved)", 20, 55)
     end
 
     -- Online status / username
@@ -667,7 +674,7 @@ function game.saveWorld()
         saveSlot = saveLib.getNextSlot()
         worldName = "World " .. tostring(saveSlot)
     end
-    saveLib.saveWorld(saveSlot, worldName, World, Player, {dayTime = dayTime}, math.floor(playTime))
+    saveLib.saveWorld(saveSlot, worldName, gamemode, World, Player, {dayTime = dayTime}, math.floor(playTime))
     logger.debug("World auto-saved to slot " .. tostring(saveSlot))
 end
 
@@ -688,6 +695,15 @@ end
 
 function refreshBuildMenu()
     availableBuildings = {}
+    if gamemode == "creative" then
+        -- All buildings available in creative
+        local allBuildings = {"workbench", "furnace", "chest", "drill", "conveyor",
+                              "wall_wood", "wall_stone", "turret", "generator"}
+        for _, b in ipairs(allBuildings) do
+            availableBuildings[#availableBuildings + 1] = b
+        end
+        return
+    end
     local tech = TechTree.levels[Player.techLevel]
     if tech then
         for _, b in ipairs(tech.buildings) do
