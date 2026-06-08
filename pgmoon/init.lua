@@ -455,6 +455,14 @@ do
             if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") then
               signature = "sha256"
             end
+            -- Normalize rsa-sha256 / ecdsa-sha256 -> sha256 for digest
+            if signature:match("sha256") then
+              signature = "sha256"
+            elseif signature:match("sha384") then
+              signature = "sha384"
+            elseif signature:match("sha512") then
+              signature = "sha512"
+            end
             cbind_data = assert(x509_digest(pem, signature))
           end
         end

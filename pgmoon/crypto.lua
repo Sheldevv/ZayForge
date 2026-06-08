@@ -114,7 +114,7 @@ else
   random_bytes = function(n) return get_fallback().random_bytes(n) end
 end
 
--- x509_digest — not needed for Neon; stub
+-- x509_digest — computes sha256 of DER certificate bytes for channel binding
 local x509_digest
 if pcall(function() return require("openssl.x509") end) then
   local x509 = require("openssl.x509")
@@ -127,8 +127,22 @@ elseif pcall(function() return require("resty.openssl.x509") end) then
     return x509.new(pem, "PEM"):digest(hash_type)
   end
 else
-  x509_digest = function()
-    return error("x509_digest not available (not needed for Neon SCRAM auth)")
+  -- Pure-Lua fallback: decode PEM to DER bytes, hash with SHA-256
+  x509_digest = function(pem, hash_type)
+    local fb = get_fallback()
+    -- Strip PEM headers/footers and whitespace, leaving pure base64
+    local b64 = pem:gsub("%-%-%-%-%-BEGIN .-%-%-%-%-%-", "")
+    b64 = b64:gsub("%-%-%-%-%-END .-%-%-%-%-%-", "")
+    b64 = b64:gsub("[%s]", "")
+    if #b64 == 0 then
+      return nil, "invalid PEM certificate"
+    end
+    local der_bytes = fb.decode_base64(b64)
+    if hash_type == "sha256" then
+      return fb.digest_sha256(der_bytes)
+    else
+      return nil, "unsupported hash type: " .. tostring(hash_type)
+    end
   end
 end
 
