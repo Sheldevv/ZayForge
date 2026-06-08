@@ -173,6 +173,12 @@ local buildMenuOpen = false
 local buildMenuSelected = 1
 local availableBuildings = {}  -- populated by tech level
 
+local buildingNames = {
+    workbench = "Workbench", furnace = "Furnace", chest = "Chest",
+    drill = "Drill", conveyor = "Conveyor", wall_wood = "Wood Wall",
+    wall_stone = "Stone Wall", turret = "Turret", generator = "Generator",
+}
+
 -- ---- Helpers ----
 
 local function worldToScreen(wx, wy)
@@ -605,12 +611,6 @@ function refreshBuildMenu()
         end
     end
 end
-
-local buildingNames = {
-    workbench = "Workbench", furnace = "Furnace", chest = "Chest",
-    drill = "Drill", conveyor = "Conveyor", wall_wood = "Wood Wall",
-    wall_stone = "Stone Wall", turret = "Turret", generator = "Generator",
-}
 
 function drawBuildMenu()
     local ww, wh = love.graphics.getDimensions()
