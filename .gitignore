@@ -5,3 +5,4 @@ build/
 love-android/
 .env*
 .zed/
+*.sh

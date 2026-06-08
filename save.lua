@@ -99,17 +99,21 @@ local function deserializeTable(str, pos)
         return tonumber(num), pos + 1 + len
     elseif t == "s" then
         local len = tonumber(str:match("^(%d+):", pos + 1))
-        local val = str:sub(pos + 1 + tostring(len):len() + 1, pos + tostring(len):len() + len)
-        return val, pos + tostring(len):len() + len + 1
+        -- Format: s<len>:<content>  e.g. s4:name
+        local prefixLen = 1 + tostring(len):len() + 1  -- 's' + digits + ':'
+        local val = str:sub(pos + prefixLen, pos + prefixLen + len - 1)
+        return val, pos + prefixLen + len
     elseif t == "b" then
         return str:sub(pos + 1, pos + 1) == "1", pos + 2
     elseif t == "t" then
         local result = {}
         pos = pos + 1
-        while str:sub(pos, pos) ~= "e" do
+        while pos <= #str and str:sub(pos, pos) ~= "e" do
             local key, val
             key, pos = deserializeTable(str, pos)
+            if not key then break end
             val, pos = deserializeTable(str, pos)
+            if not val then break end
             result[key] = val
         end
         return result, pos + 1

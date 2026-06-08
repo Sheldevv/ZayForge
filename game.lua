@@ -168,6 +168,11 @@ local playTime = 0         -- Total play time in seconds
 local autoSaveTimer = 0    -- Countdown to next auto-save
 local saveLib = nil        -- Will be set to require("save")
 
+-- Build mode
+local buildMenuOpen = false
+local buildMenuSelected = 1
+local availableBuildings = {}  -- populated by tech level
+
 -- ---- Helpers ----
 
 local function worldToScreen(wx, wy)
@@ -424,6 +429,11 @@ function game.draw()
         mobile.draw()
     end
 
+    -- Draw build menu overlay
+    if buildMenuOpen then
+        drawBuildMenu()
+    end
+
     -- Debug overlay
     if GameState.debug then
         drawDebug()
@@ -522,12 +532,12 @@ function drawUI()
     -- Instructions
     love.graphics.setFont(fonts.small)
     love.graphics.setColor(0.8, 0.8, 0.8)
-    love.graphics.print("WASD: Move | Click: Mine/Place | ESC: Menu", 20, 20)
+    love.graphics.print("WASD: Move | LMB: Mine | RMB: Place/Build | B: Build Menu | ESC: Menu", 20, 20)
 
-    -- Placement mode
+    -- Placement mode indicator
     if placementMode then
         love.graphics.setColor(1, 1, 0)
-        love.graphics.print("Placing: " .. placementMode .. " (Right-click to cancel)", ww / 2 - 100, 50)
+        love.graphics.print("Placing: " .. (buildingNames[placementMode] or placementMode) .. " (RMB to place, B to cancel)", ww / 2 - 160, 50)
     end
 end
 
@@ -584,6 +594,74 @@ function game.getWorldName()
     return worldName
 end
 
+-- ---- Build Menu ----
+
+function refreshBuildMenu()
+    availableBuildings = {}
+    local tech = TechTree.levels[Player.techLevel]
+    if tech then
+        for _, b in ipairs(tech.buildings) do
+            availableBuildings[#availableBuildings + 1] = b
+        end
+    end
+end
+
+local buildingNames = {
+    workbench = "Workbench", furnace = "Furnace", chest = "Chest",
+    drill = "Drill", conveyor = "Conveyor", wall_wood = "Wood Wall",
+    wall_stone = "Stone Wall", turret = "Turret", generator = "Generator",
+}
+
+function drawBuildMenu()
+    local ww, wh = love.graphics.getDimensions()
+    local numItems = #availableBuildings
+    if numItems == 0 then return end
+
+    -- Semi-transparent overlay
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+
+    -- Menu background
+    local menuW = math.min(400, ww - 40)
+    local menuH = 40 + numItems * 44
+    local menuX = ww / 2 - menuW / 2
+    local menuY = wh / 2 - menuH / 2
+    love.graphics.setColor(0.08, 0.08, 0.14, 0.95)
+    love.graphics.rectangle("fill", menuX, menuY, menuW, menuH, 10, 10)
+    love.graphics.setColor(0.3, 0.3, 0.4, 0.8)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", menuX, menuY, menuW, menuH, 10, 10)
+
+    -- Title
+    love.graphics.setFont(fonts.ui)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.printf("Build Menu (press 1-" .. numItems .. " or click)", menuX, menuY + 10, menuW, "center")
+
+    -- Building options
+    love.graphics.setFont(fonts.small)
+    for i, building in ipairs(availableBuildings) do
+        local by = menuY + 40 + (i - 1) * 40
+        local isSelected = (i == buildMenuSelected)
+
+        if isSelected then
+            love.graphics.setColor(0.2, 0.5, 0.8, 0.7)
+            love.graphics.rectangle("fill", menuX + 10, by, menuW - 20, 34, 6, 6)
+        end
+
+        love.graphics.setColor(0.9, 0.9, 0.9)
+        love.graphics.print(i .. ". " .. (buildingNames[building] or building), menuX + 20, by + 8)
+    end
+
+    -- Hover detection (could be improved)
+    local mx, my = love.mouse.getPosition()
+    for i, building in ipairs(availableBuildings) do
+        local by = menuY + 40 + (i - 1) * 40
+        if mx >= menuX + 10 and mx <= menuX + menuW - 10 and my >= by and my <= by + 34 then
+            buildMenuSelected = i
+        end
+    end
+end
+
 -- ---- Input Handling ----
 
 function game.keypressed(key)
@@ -611,6 +689,29 @@ function game.keypressed(key)
         Player.equippedSlot = 7
     elseif key == "8" then
         Player.equippedSlot = 8
+    elseif key == "b" then
+        -- Toggle build menu
+        buildMenuOpen = not buildMenuOpen
+        if buildMenuOpen then
+            refreshBuildMenu()
+            buildMenuSelected = 1
+        else
+            placementMode = nil
+        end
+    elseif buildMenuOpen then
+        if key == "1" then placementMode = availableBuildings[1]
+        elseif key == "2" and availableBuildings[2] then placementMode = availableBuildings[2]
+        elseif key == "3" and availableBuildings[3] then placementMode = availableBuildings[3]
+        elseif key == "4" and availableBuildings[4] then placementMode = availableBuildings[4]
+        elseif key == "5" and availableBuildings[5] then placementMode = availableBuildings[5]
+        elseif key == "6" and availableBuildings[6] then placementMode = availableBuildings[6]
+        elseif key == "7" and availableBuildings[7] then placementMode = availableBuildings[7]
+        elseif key == "8" and availableBuildings[8] then placementMode = availableBuildings[8]
+        end
+        if placementMode then
+            buildMenuOpen = false
+            logger.debug("Selected building: " .. placementMode)
+        end
     end
 end
 
@@ -619,10 +720,46 @@ function game.mousemoved(x, y, dx, dy)
 end
 
 function game.mousepressed(x, y, button)
+    -- Build menu takes priority
+    if buildMenuOpen then
+        if button == 1 then
+            local ww, wh = love.graphics.getDimensions()
+            local numItems = #availableBuildings
+            local menuW = math.min(400, ww - 40)
+            local menuH = 40 + numItems * 44
+            local menuX = ww / 2 - menuW / 2
+            local menuY = wh / 2 - menuH / 2
+            for i, _ in ipairs(availableBuildings) do
+                local by = menuY + 40 + (i - 1) * 40
+                if x >= menuX + 10 and x <= menuX + menuW - 10 and y >= by and y <= by + 34 then
+                    placementMode = availableBuildings[i]
+                    buildMenuOpen = false
+                    logger.debug("Selected building: " .. placementMode)
+                    return
+                end
+            end
+            -- Clicked outside menu - close it
+            if x < menuX or x > menuX + menuW or y < menuY or y > menuY + menuH then
+                buildMenuOpen = false
+            end
+        elseif button == 2 then
+            buildMenuOpen = false
+            placementMode = nil
+        end
+        return
+    end
+
     if button == 2 then
-        -- Right click - cancel placement
-        placementMode = nil
-        logger.debug("Placement cancelled")
+        -- Right click - place building if in placement mode
+        if placementMode and selectedTile then
+            performPlacing()
+        else
+            -- Not in placement mode, open build menu
+            buildMenuOpen = true
+            refreshBuildMenu()
+            buildMenuSelected = 1
+            logger.debug("Build menu opened")
+        end
     elseif button == 1 and selectedTile then
         local tileX, tileY = selectedTile[1], selectedTile[2]
 
