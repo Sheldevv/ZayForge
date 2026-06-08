@@ -225,6 +225,90 @@ local function removeFromInventory(itemName, count)
     return false
 end
 
+-- ---- Perform Actions ----
+
+local function performMining()
+    if not selectedTile then return end
+    local tileX, tileY = selectedTile[1], selectedTile[2]
+    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
+
+    local playerTileX, playerTileY = screenToWorld(Player.x, Player.y)
+    local dist = math.sqrt((tileX - playerTileX) ^ 2 + (tileY - playerTileY) ^ 2)
+    if dist > 4 then return end
+
+    local tile = World.tiles[tileX][tileY]
+    if tile == World.TILE.TREE then
+        World.tiles[tileX][tileY] = World.TILE.GRASS
+        addToInventory("wood", 3)
+    elseif tile == World.TILE.STONE then
+        World.tiles[tileX][tileY] = World.TILE.GRASS
+        addToInventory("stone", 2)
+    elseif tile == World.TILE.ORE_COAL then
+        World.tiles[tileX][tileY] = World.TILE.GRASS
+        addToInventory("coal", 1)
+    elseif tile == World.TILE.ORE_IRON then
+        World.tiles[tileX][tileY] = World.TILE.GRASS
+        addToInventory("iron_ore", 1)
+    elseif tile == World.TILE.ORE_COPPER then
+        World.tiles[tileX][tileY] = World.TILE.GRASS
+        addToInventory("copper_ore", 1)
+    end
+end
+
+local function performInteraction()
+    if not selectedTile then return end
+    local tileX, tileY = selectedTile[1], selectedTile[2]
+    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
+
+    local playerTileX, playerTileY = screenToWorld(Player.x, Player.y)
+    local dist = math.sqrt((tileX - playerTileX) ^ 2 + (tileY - playerTileY) ^ 2)
+    if dist > 4 then return end
+
+    local tile = World.tiles[tileX][tileY]
+    if tile == World.TILE.WORKBENCH then
+        if Player.techLevel < 1 then
+            Player.techLevel = 1
+            logger.info("Advanced to tech level 1!")
+            refreshBuildMenu()
+        end
+    elseif tile == World.TILE.FURNACE then
+        if hasInInventory("iron_ore") then
+            removeFromInventory("iron_ore")
+            addToInventory("iron_ingot")
+        elseif hasInInventory("copper_ore") then
+            removeFromInventory("copper_ore")
+            addToInventory("copper_ingot")
+        end
+    end
+end
+
+local function performPlacing()
+    if not placementMode or not selectedTile then return end
+    local tileX, tileY = selectedTile[1], selectedTile[2]
+    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
+    local tile = World.tiles[tileX][tileY]
+
+    if tile == World.TILE.GRASS or tile == World.TILE.DIRT then
+        local tileMap = {
+            workbench  = World.TILE.WORKBENCH,
+            furnace    = World.TILE.FURNACE,
+            chest      = World.TILE.CHEST,
+            drill      = World.TILE.DRILL,
+            conveyor   = World.TILE.CONVEYOR,
+            wall_wood  = World.TILE.WALL_WOOD,
+            wall_stone = World.TILE.WALL_STONE,
+            turret     = World.TILE.TURRET,
+            generator  = World.TILE.GENERATOR,
+        }
+        local newTile = tileMap[placementMode]
+        if newTile then
+            World.tiles[tileX][tileY] = newTile
+            logger.info("Placed " .. placementMode .. " at " .. tileX .. "," .. tileY)
+        end
+    end
+    placementMode = nil
+end
+
 -- ---- Public Functions ----
 
 function game.load(config)
@@ -761,83 +845,12 @@ function game.mousepressed(x, y, button)
             logger.debug("Build menu opened")
         end
     elseif button == 1 and selectedTile then
-        local tileX, tileY = selectedTile[1], selectedTile[2]
-
-        -- Check tile exists
-        if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
-
-        local tile = World.tiles[tileX][tileY]
-
-        -- If in placement mode, try to place building
+        -- Left click - mine/interact, or place if in placement mode
         if placementMode then
-            if tile == World.TILE.GRASS or tile == World.TILE.DIRT then
-                if placementMode == "workbench" then
-                    World.tiles[tileX][tileY] = World.TILE.WORKBENCH
-                elseif placementMode == "furnace" then
-                    World.tiles[tileX][tileY] = World.TILE.FURNACE
-                elseif placementMode == "chest" then
-                    World.tiles[tileX][tileY] = World.TILE.CHEST
-                elseif placementMode == "drill" then
-                    World.tiles[tileX][tileY] = World.TILE.DRILL
-                elseif placementMode == "conveyor" then
-                    World.tiles[tileX][tileY] = World.TILE.CONVEYOR
-                elseif placementMode == "wall_wood" then
-                    World.tiles[tileX][tileY] = World.TILE.WALL_WOOD
-                elseif placementMode == "wall_stone" then
-                    World.tiles[tileX][tileY] = World.TILE.WALL_STONE
-                elseif placementMode == "turret" then
-                    World.tiles[tileX][tileY] = World.TILE.TURRET
-                end
-                logger.info("Placed " .. placementMode .. " at " .. tileX .. "," .. tileY)
-            end
-            placementMode = nil
+            performPlacing()
         else
-            -- Mining/building mode
-            local playerTileX, playerTileY = screenToWorld(Player.x, Player.y)
-            local dist = math.sqrt((tileX - playerTileX) ^ 2 + (tileY - playerTileY) ^ 2)
-
-            if dist <= 4 then -- Interaction range
-                if tile == World.TILE.TREE then
-                    World.tiles[tileX][tileY] = World.TILE.GRASS
-                    addToInventory("wood", 3)
-                    logger.debug("Mined tree, got wood x3")
-                elseif tile == World.TILE.STONE then
-                    World.tiles[tileX][tileY] = World.TILE.GRASS
-                    addToInventory("stone", 2)
-                    logger.debug("Mined stone, got stone x2")
-                elseif tile == World.TILE.ORE_COAL then
-                    World.tiles[tileX][tileY] = World.TILE.GRASS
-                    addToInventory("coal", 1)
-                    logger.debug("Mined coal ore")
-                elseif tile == World.TILE.ORE_IRON then
-                    World.tiles[tileX][tileY] = World.TILE.GRASS
-                    addToInventory("iron_ore", 1)
-                    logger.debug("Mined iron ore")
-                elseif tile == World.TILE.ORE_COPPER then
-                    World.tiles[tileX][tileY] = World.TILE.GRASS
-                    addToInventory("copper_ore", 1)
-                    logger.debug("Mined copper ore")
-                elseif tile == World.TILE.WORKBENCH then
-                    -- Open crafting/build menu
-                    logger.debug("Workbench - opening build menu")
-                    -- For now, just unlock tech level 1
-                    if Player.techLevel < 1 then
-                        Player.techLevel = 1
-                        logger.info("Advanced to tech level 1!")
-                    end
-                elseif tile == World.TILE.FURNACE then
-                    -- Smelt ores
-                    if hasInInventory("iron_ore") then
-                        removeFromInventory("iron_ore")
-                        addToInventory("iron_ingot")
-                        logger.debug("Smelted iron ore into iron ingot")
-                    elseif hasInInventory("copper_ore") then
-                        removeFromInventory("copper_ore")
-                        addToInventory("copper_ingot")
-                        logger.debug("Smelted copper ore into copper ingot")
-                    end
-                end
-            end
+            performMining()
+            performInteraction()
         end
     end
 end
@@ -848,93 +861,6 @@ end
 
 function game.resize(w, h)
     mobile.updateLayout(w, h)
-end
-
-local function performMining()
-    if not selectedTile then return end
-    local tileX, tileY = selectedTile[1], selectedTile[2]
-    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
-
-    local playerTileX, playerTileY = screenToWorld(Player.x, Player.y)
-    local dist = math.sqrt((tileX - playerTileX) ^ 2 + (tileY - playerTileY) ^ 2)
-    if dist > 4 then return end
-
-    local tile = World.tiles[tileX][tileY]
-    if tile == World.TILE.TREE then
-        World.tiles[tileX][tileY] = World.TILE.GRASS
-        addToInventory("wood", 3)
-        logger.debug("Mined tree, got wood x3")
-    elseif tile == World.TILE.STONE then
-        World.tiles[tileX][tileY] = World.TILE.GRASS
-        addToInventory("stone", 2)
-        logger.debug("Mined stone, got stone x2")
-    elseif tile == World.TILE.ORE_COAL then
-        World.tiles[tileX][tileY] = World.TILE.GRASS
-        addToInventory("coal", 1)
-        logger.debug("Mined coal ore")
-    elseif tile == World.TILE.ORE_IRON then
-        World.tiles[tileX][tileY] = World.TILE.GRASS
-        addToInventory("iron_ore", 1)
-        logger.debug("Mined iron ore")
-    elseif tile == World.TILE.ORE_COPPER then
-        World.tiles[tileX][tileY] = World.TILE.GRASS
-        addToInventory("copper_ore", 1)
-        logger.debug("Mined copper ore")
-    end
-end
-
-local function performInteraction()
-    if not selectedTile then return end
-    local tileX, tileY = selectedTile[1], selectedTile[2]
-    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
-
-    local playerTileX, playerTileY = screenToWorld(Player.x, Player.y)
-    local dist = math.sqrt((tileX - playerTileX) ^ 2 + (tileY - playerTileY) ^ 2)
-    if dist > 4 then return end
-
-    local tile = World.tiles[tileX][tileY]
-    if tile == World.TILE.WORKBENCH then
-        if Player.techLevel < 1 then
-            Player.techLevel = 1
-            logger.info("Advanced to tech level 1!")
-        end
-    elseif tile == World.TILE.FURNACE then
-        if hasInInventory("iron_ore") then
-            removeFromInventory("iron_ore")
-            addToInventory("iron_ingot")
-            logger.debug("Smelted iron ore into iron ingot")
-        elseif hasInInventory("copper_ore") then
-            removeFromInventory("copper_ore")
-            addToInventory("copper_ingot")
-            logger.debug("Smelted copper ore into copper ingot")
-        end
-    end
-end
-
-local function performPlacing()
-    if not placementMode or not selectedTile then return end
-    local tileX, tileY = selectedTile[1], selectedTile[2]
-    if not World.tiles[tileX] or not World.tiles[tileX][tileY] then return end
-    local tile = World.tiles[tileX][tileY]
-
-    if tile == World.TILE.GRASS or tile == World.TILE.DIRT then
-        local tileMap = {
-            workbench  = World.TILE.WORKBENCH,
-            furnace    = World.TILE.FURNACE,
-            chest      = World.TILE.CHEST,
-            drill      = World.TILE.DRILL,
-            conveyor   = World.TILE.CONVEYOR,
-            wall_wood  = World.TILE.WALL_WOOD,
-            wall_stone = World.TILE.WALL_STONE,
-            turret     = World.TILE.TURRET,
-        }
-        local newTile = tileMap[placementMode]
-        if newTile then
-            World.tiles[tileX][tileY] = newTile
-            logger.info("Placed " .. placementMode .. " at " .. tileX .. "," .. tileY)
-        end
-    end
-    placementMode = nil
 end
 
 function game.touchpressed(id, x, y, dx, dy, pressure)
