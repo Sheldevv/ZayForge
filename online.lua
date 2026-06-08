@@ -52,20 +52,17 @@ local function parseDSN(dsn)
     if not dbname or dbname == "" then dbname = dbinfo end
     local sslmode = params:match("sslmode=([^&]*)")
 
-    -- Neon requires the endpoint ID for SNI (the first subdomain segment).
-    -- Append options=endpoint%3D<endpoint-id> if not already present.
+    -- Neon requires the endpoint ID passed as a PostgreSQL 'options' startup param.
+    -- Extract the endpoint ID (first subdomain segment of the host).
     local endpointId = host:match("^(.-)%.")
-    if endpointId and sslmode == "require" and not params:match("options=") then
-        local suffix = params and (params ~= "") and ("&" .. params) or ""
-        -- The endpoint ID goes in options as a query param
-        params = (params and params ~= "" and (params .. "&") or "") ..
-            "options=endpoint%3D" .. endpointId
+    local optionsParam = nil
+    if endpointId and sslmode == "require" then
+        optionsParam = "endpoint=" .. endpointId
     end
-
-    -- Build final database with params for pgmoon
-    local database = dbname
-    if params and params ~= "" then
-        database = dbname .. "?" .. params
+    -- Also check if user explicitly passed options= in the DSN
+    local explicitOptions = params:match("options=([^&]*)")
+    if explicitOptions then
+        optionsParam = explicitOptions
     end
 
     return {
@@ -73,7 +70,8 @@ local function parseDSN(dsn)
         password = password,
         host = host,
         port = port,
-        database = database,
+        database = dbname,
+        options = optionsParam,
         ssl = (sslmode == "require"),
     }
 end

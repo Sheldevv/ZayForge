@@ -333,7 +333,7 @@ do
     end,
     create_cqueues_openssl_context = function(self)
       if not (self.config.ssl_verify ~= nil or self.config.cert or self.config.key or self.config.ssl_version) then
-        return 
+        return
       end
       local ssl_context = require("openssl.ssl.context")
       local out = ssl_context.new(self.config.ssl_version)
@@ -979,12 +979,20 @@ do
         NULL,
         self.config.database,
         NULL,
+      }
+      -- Neon requires 'options' param in the startup packet for SNI routing
+      if self.config.options then
+        local extra = { "options", NULL, self.config.options, NULL }
+        for _, v in ipairs(extra) do table.insert(data, v) end
+      end
+      local app = {
         "application_name",
         NULL,
         self.config.application_name,
         NULL,
         NULL
       }
+      for _, v in ipairs(app) do table.insert(data, v) end
       return self.sock:send({
         self:encode_int(_len(data) + 4),
         data
