@@ -102,6 +102,10 @@ local function connectDB()
         cfg.host, cfg.port, cfg.database, cfg.user, tostring(cfg.ssl)))
 
     local ok, connErr = pcall(function()
+        cfg.luasec_opts = {
+            verify = "none",
+            servername = cfg.host,  -- Required for Neon SNI routing
+        }
         db = pgmoon.new(cfg)
         assert(db:connect())
     end)
