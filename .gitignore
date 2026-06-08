@@ -3,5 +3,5 @@ release/
 build/
 *.AppImage
 love-android/
-.env*.local
+.env*
 .zed/
