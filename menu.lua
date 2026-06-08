@@ -3,6 +3,7 @@
 local logger = require("logger")
 local lang = require("lang")
 local online = require("online")
+local saveLib = require("save")
 local menu = {}
 
 -- Button configuration
@@ -19,6 +20,11 @@ local options = {
     { key = "menu_exit" }
 }
 local selected = 1
+
+-- World selection state
+local worldSelectSelected = 1
+local worldList = {}      -- Cached list of worlds for display
+local worldListButtons = {} -- Hit areas for each world row
 
 local logoImage = nil
 
@@ -75,6 +81,8 @@ end
 
 function menu.load(argv)
     logger.info("Loading main menu...")
+
+    state = "main"
 
     -- Parse online args if passed from main.lua (may be nil on direct launch)
     if argv then
@@ -150,6 +158,36 @@ function menu.update(dt)
 end
 
 function menu.keypressed(key)
+    if state == "world_select" then
+        local maxItems = #worldList + 1 -- +1 for "Create New"
+        if key == "up" then
+            worldSelectSelected = worldSelectSelected - 1
+            if worldSelectSelected < 1 then worldSelectSelected = maxItems end
+        elseif key == "down" then
+            worldSelectSelected = worldSelectSelected + 1
+            if worldSelectSelected > maxItems then worldSelectSelected = 1 end
+        elseif key == "return" or key == "kpenter" or key == "space" then
+            if worldSelectSelected <= #worldList then
+                local w = worldList[worldSelectSelected]
+                startWorld(w.slot, w.name)
+            else
+                createNewWorld()
+            end
+        elseif key == "escape" or key == "back" then
+            state = "main"
+        elseif key == "delete" or key == "x" then
+            if worldSelectSelected <= #worldList then
+                local w = worldList[worldSelectSelected]
+                saveLib.deleteWorld(w.slot)
+                refreshWorldList()
+                if worldSelectSelected > #worldList + 1 then
+                    worldSelectSelected = math.max(1, #worldList + 1)
+                end
+            end
+        end
+        return
+    end
+
     if state == "main" then
         if key == "up" then
             selected = selected - 1
@@ -168,6 +206,15 @@ function menu.keypressed(key)
 end
 
 function menu.mousemoved(x, y, dx, dy)
+    if state == "world_select" then
+        for i, btn in ipairs(worldListButtons) do
+            if pointInRect(x, y, btn) then
+                worldSelectSelected = i
+            end
+        end
+        return
+    end
+
     if state == "main" then
         local previousSelected = selected
         for i, btn in ipairs(buttons) do
@@ -186,10 +233,25 @@ function menu.mousemoved(x, y, dx, dy)
 end
 
 function menu.mousepressed(x, y, button)
+    if state == "world_select" and button == 1 then
+        for i, btn in ipairs(worldListButtons) do
+            if pointInRect(x, y, btn) then
+                if i <= #worldList then
+                    local w = worldList[i]
+                    startWorld(w.slot, w.name)
+                else
+                    createNewWorld()
+                end
+                return
+            end
+        end
+        return
+    end
+
     if state == "main" and button == 1 then
         for i, btn in ipairs(buttons) do
             if pointInRect(x, y, btn) then
-                if i == 2 then return end -- Multiplayer and Options disabled
+                if i == 2 then return end -- Multiplayer disabled
                 activateOption(i)
             end
         end
@@ -212,9 +274,11 @@ end
 
 function activateOption(idx)
     if idx == 1 then
-        logger.info("Starting single player game")
-        GameState.current = "game"
-        GameState.game.load()
+        -- Go to world selection
+        logger.info("Opening world selection")
+        state = "world_select"
+        worldSelectSelected = 1
+        refreshWorldList()
     elseif idx == 3 then
         logger.info("Opening options menu")
         GameState.current = "options"
@@ -223,6 +287,32 @@ function activateOption(idx)
         logger.info("Exiting game")
         love.event.quit()
     end
+end
+
+-- ---- World Selection ----
+
+function refreshWorldList()
+    worldList = {}
+    worldListButtons = {}
+    local saves = saveLib.getSaves()
+    for _, s in pairs(saves) do
+        if s then
+            worldList[#worldList + 1] = s
+        end
+    end
+    table.sort(worldList, function(a, b) return (a.lastPlayed or "") > (b.lastPlayed or "") end)
+end
+
+function startWorld(slot, name)
+    logger.info("Starting world: " .. (name or "New World"))
+    GameState.current = "game"
+    GameState.game.load({slot = slot, name = name})
+end
+
+function createNewWorld()
+    local slot = saveLib.getNextSlot()
+    local name = "World " .. tostring(slot)
+    startWorld(slot, name)
 end
 
 -- ---- Drawing ----
@@ -337,6 +427,11 @@ function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
 end
 
 function menu.draw()
+    if state == "world_select" then
+        drawWorldSelect()
+        return
+    end
+
     drawBackground()
     drawLogo()
 
@@ -356,13 +451,118 @@ function menu.draw()
 end
 
 function menu.touchpressed(id, x, y, dx, dy, pressure)
+    if state == "world_select" then
+        menu.mousepressed(x, y, 1)
+        return
+    end
     menu.mousepressed(x, y, 1) -- simulate left click
 end
 
 function menu.touchmoved(id, x, y, dx, dy, pressure)
+    if state == "world_select" then
+        menu.mousemoved(x, y, dx, dy)
+        return
+    end
     menu.mousemoved(x, y, dx, dy)
 end
 
 function menu.touchreleased() end
+
+-- ---- World Selection Drawing ----
+
+function drawWorldSelect()
+    local ww, wh = love.graphics.getDimensions()
+    local scale = math.min(ww / 1280, wh / 720, 1.5)
+
+    -- Dark background
+    love.graphics.setColor(0.04, 0.04, 0.10)
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+
+    -- Title
+    local titleFont = love.graphics.newFont(math.floor(32 * scale))
+    love.graphics.setFont(titleFont)
+    love.graphics.setColor(0.95, 0.95, 0.95)
+    love.graphics.printf("Select World", 0, 20, ww, "center")
+
+    -- World list
+    local listY = math.floor(80 * scale)
+    local rowH = math.floor(56 * scale)
+    local rowW = math.floor(600 * scale)
+    local rowX = (ww - rowW) / 2
+    local smallFont = love.graphics.newFont(math.floor(14 * scale))
+    local tinyFont = love.graphics.newFont(math.floor(11 * scale))
+
+    worldListButtons = {}
+
+    for i, w in ipairs(worldList) do
+        local y = listY + (i - 1) * (rowH + 4)
+        local isSelected = (i == worldSelectSelected)
+        local btn = {x = rowX, y = y, w = rowW, h = rowH}
+        worldListButtons[i] = btn
+
+        -- Row background
+        if isSelected then
+            love.graphics.setColor(0.15, 0.40, 0.70, 0.8)
+        else
+            love.graphics.setColor(0.08, 0.08, 0.14, 0.7)
+        end
+        love.graphics.rectangle("fill", rowX, y, rowW, rowH, 8, 8)
+        love.graphics.setColor(0.25, 0.25, 0.35, 0.6)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", rowX, y, rowW, rowH, 8, 8)
+
+        -- World name
+        love.graphics.setFont(smallFont)
+        love.graphics.setColor(1, 1, 1, 0.95)
+        love.graphics.print(w.name or "Unknown", rowX + 14, y + 6)
+
+        -- Play time / info
+        love.graphics.setFont(tinyFont)
+        love.graphics.setColor(0.6, 0.6, 0.7)
+        local info = "Play time: " .. math.floor((w.playTime or 0) / 60) .. "m"
+        if w.lastPlayed then
+            info = info .. "  |  Last played: " .. w.lastPlayed
+        end
+        love.graphics.print(info, rowX + 14, y + 28)
+
+        -- Delete hint
+        if isSelected then
+            love.graphics.setColor(0.8, 0.3, 0.3, 0.8)
+            love.graphics.print("Press X to delete", rowX + rowW - 130, y + 28)
+        end
+    end
+
+    -- "Create New World" button
+    local newIdx = #worldList + 1
+    local newY = listY + (#worldList) * (rowH + 4) + 10
+    local newBtn = {x = rowX, y = newY, w = rowW, h = rowH}
+    worldListButtons[newIdx] = newBtn
+    local isNewSelected = (newIdx == worldSelectSelected)
+
+    if isNewSelected then
+        love.graphics.setColor(0.15, 0.55, 0.25, 0.8)
+    else
+        love.graphics.setColor(0.08, 0.18, 0.08, 0.7)
+    end
+    love.graphics.rectangle("fill", rowX, newY, rowW, rowH, 8, 8)
+    love.graphics.setColor(0.25, 0.45, 0.25, 0.6)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", rowX, newY, rowW, rowH, 8, 8)
+    love.graphics.setFont(smallFont)
+    love.graphics.setColor(0.3, 0.9, 0.3)
+    love.graphics.printf("+ Create New World", rowX, newY + 16, rowW, "center")
+
+    -- Empty state
+    if #worldList == 0 then
+        love.graphics.setFont(smallFont)
+        love.graphics.setColor(0.5, 0.5, 0.6)
+        love.graphics.printf("No worlds yet. Create one below!", 0, listY + 40, ww, "center")
+    end
+
+    -- Back hint
+    love.graphics.setFont(tinyFont)
+    love.graphics.setColor(0.5, 0.5, 0.6)
+    love.graphics.printf("ESC: Back to menu  |  Enter: Load  |  X: Delete", 0, wh - 30, ww, "center")
+end
 
 return menu

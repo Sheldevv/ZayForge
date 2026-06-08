@@ -162,6 +162,11 @@ local debugInfo = {}
 local dayTime = 0
 local placementMode = nil -- What we're currently placing
 local selectedTile = nil  -- Mouse-over tile coords
+local saveSlot = nil       -- Current save slot (nil = unsaved new world)
+local worldName = "World"  -- Display name for current world
+local playTime = 0         -- Total play time in seconds
+local autoSaveTimer = 0    -- Countdown to next auto-save
+local saveLib = nil        -- Will be set to require("save")
 
 -- ---- Helpers ----
 
@@ -211,27 +216,57 @@ end
 
 -- ---- Public Functions ----
 
-function game.load()
+function game.load(config)
+    config = config or {}
+    saveLib = require("save")
     logger.info("Loading game world...")
 
     -- Init mobile module
     mobile.init()
 
-    -- Generate world
-    World.seed = os.time()
-    World.generate()
+    -- Determine world source: load from save or generate new
+    local loadedSlot = config.slot
+    local loadedName = config.name or "World"
 
-    -- Reset player
-    Player.x = 50 * World.tileSize + World.tileSize / 2
-    Player.y = 50 * World.tileSize + World.tileSize / 2
-    Player.inventory = {}
-    Player.techLevel = 0
-    Player.health = Player.maxHealth
-    Player.hunger = Player.maxHunger
-
-    -- Starting items (Minecraft-like start)
-    addToInventory("wood", 10)
-    addToInventory("stone", 5)
+    if loadedSlot and saveLib.getSaves()[loadedSlot] then
+        -- Load existing world
+        logger.info("Loading world from slot " .. tostring(loadedSlot) .. ": " .. loadedName)
+        local data = saveLib.loadWorld(loadedSlot)
+        if data then
+            World.seed = data.state.seed or os.time()
+            World.tiles = saveLib.deserializeTileData(data.tileData, World.width, World.height)
+            Player.x = data.state.playerX or (50 * World.tileSize + World.tileSize / 2)
+            Player.y = data.state.playerY or (50 * World.tileSize + World.tileSize / 2)
+            Player.health = data.state.health or Player.maxHealth
+            Player.hunger = data.state.hunger or Player.maxHunger
+            Player.techLevel = data.state.techLevel or 0
+            Player.equippedSlot = data.state.equippedSlot or 1
+            Player.inventory = data.state.inventory or {}
+            dayTime = data.state.dayTime or 0
+            saveSlot = loadedSlot
+            worldName = loadedName
+            playTime = saveLib.getSaves()[loadedSlot].playTime or 0
+        end
+    else
+        -- Generate new world
+        if loadedSlot then saveSlot = loadedSlot; worldName = loadedName end
+        World.seed = os.time()
+        World.generate()
+        Player.x = 50 * World.tileSize + World.tileSize / 2
+        Player.y = 50 * World.tileSize + World.tileSize / 2
+        Player.inventory = {}
+        Player.techLevel = 0
+        Player.health = Player.maxHealth
+        Player.hunger = Player.maxHunger
+        playTime = 0
+        -- Starting items
+        addToInventory("wood", 10)
+        addToInventory("stone", 5)
+        -- Auto-save new world immediately
+        if saveSlot then
+            saveLib.saveWorld(saveSlot, worldName, World, Player, {dayTime = dayTime}, playTime)
+        end
+    end
 
     -- Camera
     World.cameraX = Player.x - love.graphics.getWidth() / 2
@@ -254,7 +289,6 @@ function game.load()
     -- Fetch online profile (username + avatar) if launched with --online=true
     if online.enabled then
         logger.info("Online mode active, fetching profile...")
-        -- Do this asynchronously via a coroutine so it doesn't block the main thread
         coroutine.wrap(function()
             local ok = online.fetchProfile()
             if ok then
@@ -265,6 +299,7 @@ function game.load()
         end)()
     end
 
+    autoSaveTimer = 60 -- First auto-save in 60 seconds
     logger.info("Game world loaded!")
 end
 
@@ -317,6 +352,16 @@ function game.update(dt)
         debugInfo.playerTile = { tileX, tileY }
         debugInfo.fps = love.timer.getFPS()
         debugInfo.entities = 0
+    end
+
+    -- Auto-save
+    if saveSlot then
+        playTime = playTime + dt
+        autoSaveTimer = autoSaveTimer - dt
+        if autoSaveTimer <= 0 then
+            game.saveWorld()
+            autoSaveTimer = 60
+        end
     end
 end
 
@@ -451,6 +496,16 @@ function drawUI()
     love.graphics.setColor(0.8, 0.6, 0.2)
     love.graphics.print("Tech Level: " .. Player.techLevel, ww - 150, 20)
 
+    -- World name & save status
+    love.graphics.setFont(fonts.small)
+    if saveSlot then
+        love.graphics.setColor(0.6, 0.8, 1)
+        love.graphics.print(worldName .. " | " .. math.floor(playTime / 60) .. "m", 20, 55)
+    else
+        love.graphics.setColor(0.8, 0.6, 0.2)
+        love.graphics.print(worldName .. " (unsaved)", 20, 55)
+    end
+
     -- Online status / username
     if online.isOnline() then
         love.graphics.setFont(fonts.small)
@@ -503,13 +558,43 @@ function drawDebug()
     end
 end
 
+-- ---- World Save / Load ----
+
+function game.saveWorld()
+    if not saveLib then saveLib = require("save") end
+    if not saveSlot then
+        -- Find a free slot
+        saveSlot = saveLib.getNextSlot()
+        worldName = "World " .. tostring(saveSlot)
+    end
+    saveLib.saveWorld(saveSlot, worldName, World, Player, {dayTime = dayTime}, math.floor(playTime))
+    logger.debug("World auto-saved to slot " .. tostring(saveSlot))
+end
+
+function game.loadWorld(slot)
+    if not saveLib then saveLib = require("save") end
+    game.load({slot = slot, name = saveLib.getSaves()[slot] and saveLib.getSaves()[slot].name or "World"})
+end
+
+function game.getSaveSlot()
+    return saveSlot
+end
+
+function game.getWorldName()
+    return worldName
+end
+
 -- ---- Input Handling ----
 
 function game.keypressed(key)
     if key == "escape" then
         logger.info("Returning to menu")
         placementMode = nil
+        if saveSlot then
+            game.saveWorld()
+        end
         GameState.current = "menu"
+        GameState.menu.load()
     elseif key == "1" then
         Player.equippedSlot = 1
     elseif key == "2" then

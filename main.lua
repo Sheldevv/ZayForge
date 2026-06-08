@@ -5,6 +5,7 @@ if os.getenv("LOVE2D_TOOLS") then pcall(require, "_love2d_tools_bridge") end
 local logger = require("logger")
 local lang = require("lang")
 local online = require("online")
+local save = require("save")
 -- local lovefs = require("lovefs.lovefs")
 
 -- Global state
@@ -38,6 +39,9 @@ function love.load(args)
 
     -- Parse online args from launcher: --online=true/false --account-id=<uuid>
     online.parseArgs(args)
+
+    -- Initialize save system
+    save.init()
 
     -- Initialize language system first
     lang.init()
@@ -79,7 +83,8 @@ end
 function love.keypressed(key)
     if key == "back" then
         if GameState.current == "game" then
-            -- pause / return to menu
+            -- Save and return to menu
+            GameState.game.saveWorld()
             GameState.current = "menu"
             GameState.menu.load()
         elseif GameState.current == "menu" then
