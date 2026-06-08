@@ -11,6 +11,25 @@ function love.conf(t)
     t.externalstorage = false            -- Save files in external storage on Android (boolean)
     t.gammacorrect = false               -- Enable gamma-correct rendering (boolean)
 
+    -- ===== External Libraries =====
+    -- Add local luarocks install path so pgmoon can find luasec (ssl.so)
+    -- on LuaJIT 2.1 systems.  Path is: ~/.luarocks/lib/lua/5.1/
+    t.external_libraries = {}
+    local home = os.getenv("HOME") or os.getenv("USERPROFILE")
+    if home then
+        local lr_path = home .. "/.luarocks/lib/lua/5.1"
+        if love.filesystem.getInfo then
+            table.insert(t.external_libraries, lr_path)
+        else
+            -- love.filesystem not available in conf.lua; use raw os check
+            local f = io.open(lr_path .. "/ssl.so")
+            if f then
+                f:close()
+                table.insert(t.external_libraries, lr_path)
+            end
+        end
+    end
+
     -- ===== Audio =====
     t.audio.mic = false                  -- Request microphone on Android (boolean)
     t.audio.mixwithsystem = true         -- Keep background music when opening LOVE (boolean, iOS/Android)

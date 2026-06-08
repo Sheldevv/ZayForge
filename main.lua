@@ -26,6 +26,16 @@ end
 function love.load(args)
     logger.info("Initializing ZayForge (" .. love.system.getOS() .. ")...")
 
+    -- Add local luarocks paths to C loader so pgmoon can find luasec (ssl.so)
+    local home = os.getenv("HOME") or os.getenv("USERPROFILE")
+    if home then
+        local lr_clib = home .. "/.luarocks/lib/lua/5.1/?.so"
+        local lr_lib  = home .. "/.luarocks/share/lua/5.1/?.lua;" ..
+                       home .. "/.luarocks/share/lua/5.1/?/init.lua"
+        package.cpath = lr_clib .. ";" .. (package.cpath or "")
+        package.path  = lr_lib  .. ";" .. (package.path or "")
+    end
+
     -- Parse online args from launcher: --online=true/false --account-id=<uuid>
     online.parseArgs(args)
 
