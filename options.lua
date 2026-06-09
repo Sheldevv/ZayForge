@@ -1,9 +1,11 @@
 -- ZayForge – Options Menu Module
 -- Comprehensive options/settings menu with language support
+-- Refactored to use gui.lua for all drawing and hit-testing
 
 local logger = require("logger")
 local lang = require("lang")
 local menu = require("menu")
+local gui = require("gui")
 local options = {}
 
 -- ===== State =====
@@ -35,74 +37,87 @@ local SLIDER_WIDTH = 250
 local BUTTON_WIDTH = 140
 local BUTTON_HEIGHT = 40
 
--- Fonts
+-- Base font sizes (will be scaled by gui.scale() on load)
+local BASE_TAB_FONT_SIZE = 20
+local BASE_OPTION_FONT_SIZE = 18
+local BASE_SMALL_FONT_SIZE = 14
+
+-- Fonts (loaded in options.load)
 local fontTab, fontOption, fontSmall
-local TAB_FONT_SIZE = 20
-local OPTION_FONT_SIZE = 18
-local SMALL_FONT_SIZE = 14
 
--- ===== Helper Functions =====
+-- ===== Settings File Path =====
 
-local function loadFonts()
-    local success = pcall(function()
-        fontTab = love.graphics.newFont("assets/fonts/airstrike.ttf", TAB_FONT_SIZE)
-        fontOption = love.graphics.newFont("assets/fonts/airstrike.ttf", OPTION_FONT_SIZE)
-        fontSmall = love.graphics.newFont("assets/fonts/airstrike.ttf", SMALL_FONT_SIZE)
-    end)
-
-    if not success then
-        fontTab = love.graphics.newFont(TAB_FONT_SIZE)
-        fontOption = love.graphics.newFont(OPTION_FONT_SIZE)
-        fontSmall = love.graphics.newFont(SMALL_FONT_SIZE)
-    end
-end
-
-local function drawRoundedRect(x, y, w, h, r, fillColor, borderColor, borderWidth)
-    if fillColor then
-        love.graphics.setColor(fillColor)
-        love.graphics.rectangle("fill", x, y, w, h, r, r)
-    end
-    if borderColor and borderWidth and borderWidth > 0 then
-        love.graphics.setColor(borderColor)
-        love.graphics.setLineWidth(borderWidth)
-        love.graphics.rectangle("line", x, y, w, h, r, r)
-    end
-end
-
-local function drawButton(x, y, w, h, text, isHovered, isSelected)
-    local fillColor
-    if isSelected then
-        fillColor = { 0.2, 0.6, 1, 0.9 }
-    elseif isHovered then
-        fillColor = { 0.15, 0.45, 0.8, 0.8 }
+local function getSettingsDir()
+    local osName = love.system.getOS()
+    if osName == "Windows" then
+        return (os.getenv("APPDATA") or os.getenv("USERPROFILE") .. "\\AppData\\Roaming") .. "\\ZayForge"
     else
-        fillColor = { 0.08, 0.08, 0.12, 0.7 }
+        return (os.getenv("HOME") or "/tmp") .. "/.zayforge"
+    end
+end
+
+local function getSettingsPath()
+    local dir = getSettingsDir()
+    local sep = (love.system.getOS() == "Windows") and "\\" or "/"
+    return dir .. sep .. "settings.txt"
+end
+
+-- ===== Settings I/O (key=value format, stored outside sandbox) =====
+
+local function loadSettings()
+    local path = getSettingsPath()
+    local file, err = io.open(path, "r")
+    if not file then
+        return -- no saved settings yet, use defaults
     end
 
-    drawRoundedRect(x, y, w, h, 8, fillColor, { 0.4, 0.4, 0.5, 1 }, 2)
-
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(fontOption)
-    local textH = fontOption:getHeight()
-    love.graphics.printf(text, x, y + (h - textH) / 2, w, "center")
+    for line in file:lines() do
+        -- Parse "key = value"
+        local key, value = line:match("^%s*([^=]+)%s*=%s*(.+)$")
+        if key and value then
+            key = key:match("^%s*(.-)%s*$")    -- trim
+            value = value:match("^%s*(.-)%s*$") -- trim
+            if settings[key] ~= nil then
+                if value == "true" then
+                    settings[key] = true
+                elseif value == "false" then
+                    settings[key] = false
+                elseif tonumber(value) then
+                    settings[key] = tonumber(value)
+                else
+                    settings[key] = value
+                end
+            end
+        end
+    end
+    file:close()
 end
 
-local function drawSlider(x, y, w, h, value, maxValue)
-    -- Background
-    drawRoundedRect(x, y + h / 2 - 3, w, 6, 3, { 0.1, 0.1, 0.1, 0.8 }, { 0.3, 0.3, 0.3, 1 }, 1)
+local function saveSettings()
+    local path = getSettingsPath()
+    local dir = getSettingsDir()
 
-    -- Fill
-    local fillWidth = (value / maxValue) * w
-    drawRoundedRect(x, y + h / 2 - 3, fillWidth, 6, 3, { 0.2, 0.7, 1, 1 }, nil, 0)
+    -- Ensure the directory exists
+    if love.system.getOS() == "Windows" then
+        os.execute('if not exist "' .. dir .. '" mkdir "' .. dir .. '"')
+    else
+        os.execute('mkdir -p "' .. dir .. '"')
+    end
 
-    -- Thumb
-    local thumbX = x + (value / maxValue) * w - 6
-    drawRoundedRect(thumbX, y + h / 2 - 10, 12, 20, 4, { 0.3, 0.8, 1, 1 }, { 0.5, 0.9, 1, 1 }, 2)
+    local file, err = io.open(path, "w")
+    if not file then
+        logger.warn("Could not write settings to " .. path .. ": " .. (err or "unknown"))
+        return
+    end
+
+    for k, v in pairs(settings) do
+        file:write(k .. "=" .. tostring(v) .. "\n")
+    end
+    file:close()
+    logger.debug("Settings saved to " .. path)
 end
 
-local function pointInRect(px, py, x, y, w, h)
-    return px >= x and px <= x + w and py >= y and py <= y + h
-end
+-- ===== Option Definitions =====
 
 local function getOptionsByTab(tab)
     if tab == "language" then
@@ -141,27 +156,15 @@ end
 
 function options.load()
     logger.info("Loading options menu...")
-    loadFonts()
 
-    -- Load saved settings
-    local success, content = pcall(function()
-        return love.filesystem.read("settings.txt")
-    end)
+    -- Load fonts with gui scaling
+    local s = gui.scale()
+    fontTab = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_TAB_FONT_SIZE * s))
+    fontOption = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_OPTION_FONT_SIZE * s))
+    fontSmall = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_SMALL_FONT_SIZE * s))
 
-    if success and content then
-        local chunk, err = loadstring("return " .. content)
-        if chunk then
-            local ok, savedSettings = pcall(chunk)
-            if ok and type(savedSettings) == "table" then
-                -- Load saved settings while keeping defaults for missing keys
-                for k, v in pairs(savedSettings) do
-                    if settings[k] ~= nil then
-                        settings[k] = v
-                    end
-                end
-            end
-        end
-    end
+    -- Load saved settings from ~/.zayforge/settings.txt (or %APPDATA%\ZayForge\settings.txt)
+    loadSettings()
 
     -- Sync with current state
     settings.language = lang.getCurrent()
@@ -181,20 +184,8 @@ function options.load()
 end
 
 function options.save()
-    -- Save current settings to file
-    local serialized = "return {\n"
-    for k, v in pairs(settings) do
-        if type(v) == "string" then
-            serialized = serialized .. "  " .. k .. " = \"" .. v:gsub('"', '\\"') .. "\",\n"
-        elseif type(v) == "boolean" then
-            serialized = serialized .. "  " .. k .. " = " .. tostring(v) .. ",\n"
-        elseif type(v) == "number" then
-            serialized = serialized .. "  " .. k .. " = " .. v .. ",\n"
-        end
-    end
-    serialized = serialized .. "}\n"
-
-    love.filesystem.write("settings.txt", serialized)
+    -- Write settings in key=value format to the native config path
+    saveSettings()
     logger.debug("Settings saved")
 end
 
@@ -210,10 +201,8 @@ function options.draw()
     love.graphics.rectangle("fill", 0, 0, ww, wh)
 
     -- Title
-    love.graphics.setColor(0.95, 0.95, 0.95, 1)
-    local titleFont = love.graphics.newFont(36)
-    love.graphics.setFont(titleFont)
-    love.graphics.printf(lang.t("options_title"), 0, 20, ww, "center")
+    local titleFont = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(36 * gui.scale()))
+    gui.drawTitle(lang.t("options_title"), 20, titleFont)
 
     -- Tab buttons
     local tabButtonWidth = 120
@@ -226,7 +215,10 @@ function options.draw()
         local isSelected = (tab == currentTab)
         local isHovered = (hoveredOption == "tab_" .. i)
 
-        drawButton(tabX, tabY, tabButtonWidth, TAB_HEIGHT, tabNames[tab] or tab, isHovered, isSelected)
+        gui.drawButton(
+            { x = tabX, y = tabY, w = tabButtonWidth, h = TAB_HEIGHT },
+            { label = tabNames[tab] or tab, font = fontTab, isSelected = isSelected, isHovered = isHovered }
+        )
     end
 
     -- Content area
@@ -235,8 +227,8 @@ function options.draw()
     local contentWidth = ww - 2 * PADDING
     local contentHeight = wh - contentY - PADDING - BUTTON_HEIGHT - 20
 
-    -- Content background
-    drawRoundedRect(contentX, contentY - 10, contentWidth, contentHeight, 8,
+    -- Content background panel
+    gui.drawRect(contentX, contentY - 10, contentWidth, contentHeight, 8,
         { 0.08, 0.08, 0.12, 0.6 }, { 0.3, 0.3, 0.4, 0.8 }, 2)
 
     -- Draw options based on current tab
@@ -264,7 +256,10 @@ function options.draw()
                 love.graphics.printf("✓ " .. lang.t("apply"), contentX + 240, optY + (btnH - fontOption:getHeight()) / 2,
                     100, "left")
             else
-                drawButton(btnX, optY, btnW, btnH, opt.label, isHovered, false)
+                gui.drawButton(
+                    { x = btnX, y = optY, w = btnW, h = btnH },
+                    { label = opt.label, font = fontOption, isHovered = isHovered }
+                )
             end
         elseif opt.type == "toggle" then
             -- Toggle option
@@ -275,19 +270,21 @@ function options.draw()
             local toggleValue = settings[opt.key] and lang.t("graphics_on") or lang.t("graphics_off")
             local isHovered = (hoveredOption == "toggle_" .. i)
 
-            -- On/Off color indicator
-            if settings[opt.key] then
-                drawButton(toggleX, optY + 2, 100, OPTION_HEIGHT - 4, toggleValue, isHovered, true)
-            else
-                drawButton(toggleX, optY + 2, 100, OPTION_HEIGHT - 4, toggleValue, isHovered, false)
-            end
+            gui.drawButton(
+                { x = toggleX, y = optY + 2, w = 100, h = OPTION_HEIGHT - 4 },
+                { label = toggleValue, font = fontOption, isSelected = settings[opt.key], isHovered = isHovered }
+            )
         elseif opt.type == "slider" then
             -- Slider option
             love.graphics.setColor(0.9, 0.9, 0.9, 1)
             love.graphics.printf(opt.label, contentX + 20, optY + 12, 250, "left")
 
             local sliderX = contentX + 300
-            drawSlider(sliderX, optY + 10, SLIDER_WIDTH, OPTION_HEIGHT - 10, settings[opt.key], opt.max)
+            -- gui.drawSlider expects y as the center of the track
+            local trackCenterY = optY + 10 + (OPTION_HEIGHT - 10) / 2
+            local isSliderHovered = (hoveredOption == "slider_" .. i)
+
+            gui.drawSlider(sliderX, trackCenterY, SLIDER_WIDTH, settings[opt.key], 0, opt.max, isSliderHovered)
 
             -- Value display
             love.graphics.setFont(fontSmall)
@@ -305,7 +302,11 @@ function options.draw()
                 local isSelected = (diff == settings.difficulty)
                 local isHovered = (hoveredOption == "diff_" .. j)
                 local diffLabel = lang.t("gameplay_difficulty_" .. diff)
-                drawButton(btnX, optY, 100, OPTION_HEIGHT - 4, diffLabel, isHovered, isSelected)
+
+                gui.drawButton(
+                    { x = btnX, y = optY, w = 100, h = OPTION_HEIGHT - 4 },
+                    { label = diffLabel, font = fontOption, isSelected = isSelected, isHovered = isHovered }
+                )
             end
         end
     end
@@ -314,7 +315,11 @@ function options.draw()
     local backY = wh - BUTTON_HEIGHT - 20
     local backX = ww / 2 - BUTTON_WIDTH / 2
     local isBackHovered = (hoveredOption == "back")
-    drawButton(backX, backY, BUTTON_WIDTH, BUTTON_HEIGHT, lang.t("options_back"), isBackHovered, false)
+
+    gui.drawButton(
+        { x = backX, y = backY, w = BUTTON_WIDTH, h = BUTTON_HEIGHT },
+        { label = lang.t("options_back"), font = fontOption, isHovered = isBackHovered }
+    )
 end
 
 function options.keypressed(key)
@@ -338,7 +343,7 @@ function options.mousemoved(x, y, dx, dy)
 
     for i, tab in ipairs(tabs) do
         local tabX = tabStartX + (i - 1) * (tabButtonWidth + 10)
-        if pointInRect(x, y, tabX, tabY, tabButtonWidth, TAB_HEIGHT) then
+        if gui.hitTest(x, y, { x = tabX, y = tabY, w = tabButtonWidth, h = TAB_HEIGHT }) then
             hoveredOption = "tab_" .. i
             return
         end
@@ -355,20 +360,28 @@ function options.mousemoved(x, y, dx, dy)
 
         if currentTab == "language" and not opt.isCurrent then
             local btnX = contentX + contentWidth / 2 - 80
-            if pointInRect(x, y, btnX, optY, 160, OPTION_HEIGHT) then
+            if gui.hitTest(x, y, { x = btnX, y = optY, w = 160, h = OPTION_HEIGHT }) then
                 hoveredOption = "lang_" .. i
                 return
             end
         elseif opt.type == "toggle" then
             local toggleX = contentX + contentWidth - 120
-            if pointInRect(x, y, toggleX, optY + 2, 100, OPTION_HEIGHT - 4) then
+            if gui.hitTest(x, y, { x = toggleX, y = optY + 2, w = 100, h = OPTION_HEIGHT - 4 }) then
                 hoveredOption = "toggle_" .. i
+                return
+            end
+        elseif opt.type == "slider" then
+            local sliderX = contentX + 300
+            local trackCenterY = optY + 10 + (OPTION_HEIGHT - 10) / 2
+            -- Hit-test the slider track + thumb area
+            if gui.hitTest(x, y, { x = sliderX - 10, y = trackCenterY - 12, w = SLIDER_WIDTH + 20, h = 24 }) then
+                hoveredOption = "slider_" .. i
                 return
             end
         elseif opt.type == "difficulty" then
             for j, diff in ipairs({ "easy", "normal", "hard" }) do
                 local btnX = contentX + 250 + (j - 1) * 120
-                if pointInRect(x, y, btnX, optY, 100, OPTION_HEIGHT - 4) then
+                if gui.hitTest(x, y, { x = btnX, y = optY, w = 100, h = OPTION_HEIGHT - 4 }) then
                     hoveredOption = "diff_" .. j
                     return
                 end
@@ -379,7 +392,7 @@ function options.mousemoved(x, y, dx, dy)
     -- Check back button
     local backY = wh - BUTTON_HEIGHT - 20
     local backX = ww / 2 - BUTTON_WIDTH / 2
-    if pointInRect(x, y, backX, backY, BUTTON_WIDTH, BUTTON_HEIGHT) then
+    if gui.hitTest(x, y, { x = backX, y = backY, w = BUTTON_WIDTH, h = BUTTON_HEIGHT }) then
         hoveredOption = "back"
         return
     end
@@ -398,7 +411,7 @@ function options.mousepressed(x, y, button)
 
     for i, tab in ipairs(tabs) do
         local tabX = tabStartX + (i - 1) * (tabButtonWidth + 10)
-        if pointInRect(x, y, tabX, tabY, tabButtonWidth, TAB_HEIGHT) then
+        if gui.hitTest(x, y, { x = tabX, y = tabY, w = tabButtonWidth, h = TAB_HEIGHT }) then
             currentTab = tab
             selectedOption = 1
             logger.debug("Switched to tab: " .. tab)
@@ -418,7 +431,7 @@ function options.mousepressed(x, y, button)
         if currentTab == "language" and not opt.isCurrent then
             -- Language selection
             local btnX = contentX + contentWidth / 2 - 80
-            if pointInRect(x, y, btnX, optY, 160, OPTION_HEIGHT) then
+            if gui.hitTest(x, y, { x = btnX, y = optY, w = 160, h = OPTION_HEIGHT }) then
                 local success = lang.setLanguage(opt.langId)
                 if success then
                     settings.language = opt.langId
@@ -431,7 +444,7 @@ function options.mousepressed(x, y, button)
         elseif opt.type == "toggle" then
             -- Toggle button
             local toggleX = contentX + contentWidth - 120
-            if pointInRect(x, y, toggleX, optY + 2, 100, OPTION_HEIGHT - 4) then
+            if gui.hitTest(x, y, { x = toggleX, y = optY + 2, w = 100, h = OPTION_HEIGHT - 4 }) then
                 settings[opt.key] = not settings[opt.key]
 
                 -- Apply changes immediately for certain settings
@@ -446,12 +459,21 @@ function options.mousepressed(x, y, button)
                 options.save()
                 return
             end
+        elseif opt.type == "slider" then
+            -- Slider click — snap to position
+            local sliderX = contentX + 300
+            local trackCenterY = optY + 10 + (OPTION_HEIGHT - 10) / 2
+            if gui.hitTest(x, y, { x = sliderX - 10, y = trackCenterY - 12, w = SLIDER_WIDTH + 20, h = 24 }) then
+                local t = math.max(0, math.min(1, (x - sliderX) / SLIDER_WIDTH))
+                settings[opt.key] = math.floor(t * opt.max)
+                options.save()
+            end
         elseif opt.type == "difficulty" then
             -- Difficulty buttons
             local difficulties = { "easy", "normal", "hard" }
             for j, diff in ipairs(difficulties) do
                 local btnX = contentX + 250 + (j - 1) * 120
-                if pointInRect(x, y, btnX, optY, 100, OPTION_HEIGHT - 4) then
+                if gui.hitTest(x, y, { x = btnX, y = optY, w = 100, h = OPTION_HEIGHT - 4 }) then
                     settings.difficulty = diff
                     logger.debug("Difficulty changed to: " .. diff)
                     options.save()
@@ -464,7 +486,7 @@ function options.mousepressed(x, y, button)
     -- Check back button
     local backY = wh - BUTTON_HEIGHT - 20
     local backX = ww / 2 - BUTTON_WIDTH / 2
-    if pointInRect(x, y, backX, backY, BUTTON_WIDTH, BUTTON_HEIGHT) then
+    if gui.hitTest(x, y, { x = backX, y = backY, w = BUTTON_WIDTH, h = BUTTON_HEIGHT }) then
         logger.info("Returning to main menu from options")
         options.save()
         GameState.current = "menu"
@@ -474,7 +496,7 @@ function options.mousepressed(x, y, button)
 end
 
 function options.mousereleased(x, y, button)
-    -- Handle mouse release if needed (for sliders in the future)
+    -- Handle mouse release if needed
 end
 
 function options.wheelmoved(x, y)
@@ -482,9 +504,11 @@ function options.wheelmoved(x, y)
 end
 
 function options.resize(w, h)
-    -- Handle window resizing if necessary
-    -- Reload fonts if needed
-    loadFonts()
+    -- Reload fonts at the new scale
+    local s = gui.scale()
+    fontTab = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_TAB_FONT_SIZE * s))
+    fontOption = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_OPTION_FONT_SIZE * s))
+    fontSmall = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(BASE_SMALL_FONT_SIZE * s))
 end
 
 function options.touchpressed(id, x, y, dx, dy, pressure)

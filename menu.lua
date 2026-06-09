@@ -125,8 +125,19 @@ function menu.update(dt)
     end
 end
 
+function menu.textinput(t)
+    if state == "create_world" and nameFieldFocused then
+        if t == "/" or t == "\\" then return end
+        createName = createName .. t
+    end
+end
+
 function menu.keypressed(key)
     if state == "create_world" then
+        if key == "backspace" and nameFieldFocused then
+            createName = createName:sub(1, -2)
+            return
+        end
         if key == "escape" or key == "back" then
             state = "world_select"
             refreshWorldList()
@@ -565,20 +576,11 @@ function drawWorldSelect()
     love.graphics.printf("ESC: Back to menu  |  Enter: Load  |  X: Delete", 0, wh - 30, ww, "center")
 end
 
--- ---- Text Input ----
-
-function menu.textinput(t)
-    if state == "create_world" and nameFieldFocused then
-        if t == "/" or t == "\\" then return end
-        createName = createName .. t
-    end
-end
-
 -- ---- Create World Screen ----
 
 drawCreateWorld = function()
     local ww, wh = love.graphics.getDimensions()
-    local scale = math.min(ww / 1280, wh / 720, 1.5)
+    local scale = gui.scale()
     love.graphics.setColor(0.04, 0.04, 0.10)
     love.graphics.rectangle("fill", 0, 0, ww, wh)
     local titleFont = love.graphics.newFont(math.floor(32 * scale))

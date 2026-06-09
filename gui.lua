@@ -69,6 +69,76 @@ function gui.loadFont(path, size)
     return font
 end
 
+-- ===== Label & Title =====
+
+--- Draw a simple left-aligned text label.
+--- @param text  string
+--- @param x     number  left x coordinate
+--- @param y     number  top y coordinate
+--- @param font  love.Font (optional, defaults to 16px)
+--- @param color table (optional, defaults to gui.colors.text)
+function gui.drawLabel(text, x, y, font, color)
+    font = font or love.graphics.newFont(16)
+    love.graphics.setFont(font)
+    love.graphics.setColor(color or gui.colors.text)
+    love.graphics.print(text, x, y)
+end
+
+--- Draw a centered title text across the full screen width.
+--- @param text string
+--- @param y    number  top y coordinate
+--- @param font love.Font (optional, defaults to 24px)
+function gui.drawTitle(text, y, font)
+    font = font or love.graphics.newFont(24)
+    love.graphics.setFont(font)
+    love.graphics.setColor(gui.colors.text)
+    love.graphics.printf(text, 0, y, love.graphics.getWidth(), "center")
+end
+
+-- ===== Slider =====
+
+--- Draw a horizontal slider with track, fill, and draggable thumb.
+--- @param x         number  left x of the track
+--- @param y         number  center y of the track
+--- @param w         number  track width in pixels
+--- @param value     number  current slider value
+--- @param minVal    number  minimum bound
+--- @param maxVal    number  maximum bound
+--- @param isHovered boolean (optional) slightly enlarges the thumb
+function gui.drawSlider(x, y, w, value, minVal, maxVal, isHovered)
+    local trackH = 6
+    local trackY = y - trackH / 2
+    local trackR = trackH / 2
+
+    -- Fraction [0, 1]
+    local range = maxVal - minVal
+    local t = range ~= 0 and ((value - minVal) / range) or 0
+    t = math.max(0, math.min(1, t))
+
+    local thumbX = x + t * w
+    local thumbR = isHovered and 9 or 7
+
+    -- Track (full-width background)
+    love.graphics.setColor(gui.colors.panelBorder)
+    love.graphics.rectangle("fill", x, trackY, w, trackH, trackR, trackR)
+
+    -- Filled portion of the track
+    local fillW = thumbX - x
+    if fillW > 0 then
+        love.graphics.setColor(gui.colors.info)
+        love.graphics.rectangle("fill", x, trackY, fillW, trackH, trackR, trackR)
+    end
+
+    -- Thumb body
+    love.graphics.setColor(gui.colors.accent)
+    love.graphics.circle("fill", thumbX, y, thumbR)
+
+    -- Thumb border for contrast
+    love.graphics.setColor(1, 1, 1, 0.25)
+    love.graphics.setLineWidth(1)
+    love.graphics.circle("line", thumbX, y, thumbR)
+end
+
 -- ===== Button Rendering =====
 
 --- opts table:
@@ -143,20 +213,64 @@ end
 
 -- ===== Text Input Field =====
 
-function gui.drawField(rect, text, font, focused)
+--- Draw a text field with optional blinking cursor bar.
+--- @param rect      table   { x, y, w, h }
+--- @param text      string  the displayed text
+--- @param font      love.Font (optional, defaults to 18px)
+--- @param focused   boolean whether the field has keyboard focus
+--- @param cursorPos number  1-based cursor position, or nil/0 to hide cursor
+function gui.drawTextField(rect, text, font, focused, cursorPos)
+    font = font or love.graphics.newFont(18)
+    love.graphics.setFont(font)
+
     -- Background
     love.graphics.setColor(focused and gui.colors.inputFocus or gui.colors.inputBg)
     love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 6, 6)
+
     -- Border
     love.graphics.setColor(focused and gui.colors.fieldBorder or gui.colors.panelBorder)
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 6, 6)
-    -- Text
-    font = font or love.graphics.newFont(18)
-    love.graphics.setFont(font)
-    love.graphics.setColor(1, 1, 1)
-    local display = text .. (focused and "_" or "")
-    love.graphics.print(display, rect.x + 10, rect.y + 8)
+
+    -- Text (vertically centered in the field)
+    local textH = font:getHeight()
+    local tx = rect.x + 10
+    local ty = rect.y + (rect.h - textH) / 2
+    love.graphics.setColor(gui.colors.text)
+    love.graphics.print(text, tx, ty)
+
+    -- Blinking cursor bar
+    if focused and cursorPos and cursorPos >= 1 then
+        local blink = (love.timer.getTime() * 2) % 2 < 1
+        if blink then
+            local cursorX = tx + font:getWidth(text:sub(1, cursorPos - 1))
+            local pad = 2
+            love.graphics.setColor(1, 1, 1, 0.8)
+            love.graphics.setLineWidth(1.5)
+            love.graphics.line(cursorX, ty + pad, cursorX, ty + textH - pad)
+        end
+    end
+end
+
+--- Legacy text field (delegates to gui.drawTextField).
+--- When focused, the cursor blinks at the end of the text.
+function gui.drawField(rect, text, font, focused)
+    gui.drawTextField(rect, text, font, focused, focused and (#text + 1) or nil)
+end
+
+-- ===== Text Manipulation =====
+
+--- Remove the character before pos from str (backspace).
+--- Returns the new string and adjusted cursor position.
+--- @param str string
+--- @param pos number  1-based cursor position
+--- @return string, number  newStr, newPos
+function gui.backspace(str, pos)
+    if #str == 0 or pos <= 1 then
+        return str, pos
+    end
+    local newStr = str:sub(1, pos - 2) .. str:sub(pos)
+    return newStr, pos - 1
 end
 
 -- ===== Background =====
