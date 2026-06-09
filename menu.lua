@@ -4,6 +4,7 @@ local logger = require("logger")
 local lang = require("lang")
 local online = require("online")
 local saveLib = require("save")
+local gui = require("gui")
 local menu = {}
 
 -- Button configuration
@@ -70,77 +71,34 @@ local function createParticle()
     }
 end
 
-local function pointInRect(px, py, rect)
-    return px >= rect.x and px <= rect.x + rect.w and
-        py >= rect.y and py <= rect.y + rect.h
-end
-
-local function drawRoundedRect(x, y, w, h, r, fillColor, borderColor, borderWidth)
-    if fillColor then
-        love.graphics.setColor(fillColor)
-        love.graphics.rectangle("fill", x, y, w, h, r, r)
-    end
-    if borderColor and borderWidth and borderWidth > 0 then
-        love.graphics.setColor(borderColor)
-        love.graphics.setLineWidth(borderWidth)
-        love.graphics.rectangle("line", x, y, w, h, r, r)
-    end
-end
-
 -- ---- Public functions ----
 
 function menu.load(argv)
     logger.info("Loading main menu...")
-
     state = "main"
 
-    -- Parse online args if passed from main.lua (may be nil on direct launch)
-    if argv then
-        online.parseArgs(argv)
-    end
-
-    -- Fetch profile if online but not yet loaded
+    if argv then online.parseArgs(argv) end
     if online.enabled and not online.isOnline() then
-        coroutine.wrap(function()
-            online.fetchProfile()
-        end)()
+        coroutine.wrap(function() online.fetchProfile() end)()
     end
 
     logoImage = love.graphics.newImage("assets/images/header.png")
 
-    -- Scale font sizes for mobile screens
-    local ww, wh = love.graphics.getDimensions()
-    local scale = math.min(ww / 1280, wh / 720, 1.5)
-    local baseFontSize = math.floor(36 * scale)
-    local baseHintSize = math.floor(16 * scale)
-    local baseTooltipSize = math.floor(18 * scale)
-
-    local success = pcall(function()
-        fontButton = love.graphics.newFont("assets/fonts/airstrike.ttf", baseFontSize)
-        fontHint = love.graphics.newFont("assets/fonts/airstrikeacad.ttf", baseHintSize)
-        fontTooltip = love.graphics.newFont("assets/fonts/airstrike.ttf", baseTooltipSize)
-    end)
-
-    if not success or not fontButton then
-        logger.warn("Custom fonts not found, using fallback")
-        fontButton = love.graphics.newFont(baseFontSize)
-        fontHint = love.graphics.newFont(baseHintSize)
-        fontTooltip = love.graphics.newFont(baseTooltipSize)
-    end
+    local scale = gui.scale()
+    fontButton = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(36 * scale))
+    fontHint = gui.loadFont("assets/fonts/airstrikeacad.ttf", math.floor(16 * scale))
+    fontTooltip = gui.loadFont("assets/fonts/airstrike.ttf", math.floor(18 * scale))
 
     arrowCursor = love.mouse.getSystemCursor("arrow")
     love.mouse.setCursor(arrowCursor)
 
-    for i = 1, PARTICLE_COUNT do
-        table.insert(particles, createParticle())
-    end
-
+    for i = 1, PARTICLE_COUNT do table.insert(particles, createParticle()) end
     recalcButtons()
 end
 
 function recalcButtons()
     local ww, wh = love.graphics.getDimensions()
-    local scale = math.min(ww / 1280, wh / 720, 1.5)
+    local scale = gui.scale()
     local btnW = math.floor(BUTTON_WIDTH * scale)
     local btnH = math.floor(BUTTON_HEIGHT * scale)
     local spacing = math.floor(buttonSpacing * scale)
@@ -228,30 +186,21 @@ end
 
 function menu.mousemoved(x, y, dx, dy)
     if state == "create_world" or state == "world_select" then
-        -- Handled by drawing
     end
     if state == "world_select" then
         for i, btn in ipairs(worldListButtons) do
-            if pointInRect(x, y, btn) then
-                worldSelectSelected = i
-            end
+            if gui.hitTest(x, y, btn) then worldSelectSelected = i end
         end
         return
     end
-
     if state == "main" then
         local previousSelected = selected
         for i, btn in ipairs(buttons) do
-            if pointInRect(x, y, btn) then
-                if selected ~= i then
-                    selected = i
-                    selectedGlow = 0
-                end
+            if gui.hitTest(x, y, btn) then
+                if selected ~= i then selected = i; selectedGlow = 0 end
             end
         end
-        if previousSelected ~= selected then
-            updateTooltip()
-        end
+        if previousSelected ~= selected then updateTooltip() end
         love.mouse.setCursor(arrowCursor)
     end
 end
@@ -263,10 +212,9 @@ function menu.mousepressed(x, y, button)
     end
     if state == "world_select" and button == 1 then
         for i, btn in ipairs(worldListButtons) do
-            if pointInRect(x, y, btn) then
+            if gui.hitTest(x, y, btn) then
                 if i <= #worldList then
-                    local w = worldList[i]
-                    startWorld(w.slot, w.name)
+                    startWorld(worldList[i].slot, worldList[i].name)
                 else
                     createNewWorld()
                 end
@@ -275,11 +223,10 @@ function menu.mousepressed(x, y, button)
         end
         return
     end
-
     if state == "main" and button == 1 then
         for i, btn in ipairs(buttons) do
-            if pointInRect(x, y, btn) then
-                if i == 2 then return end -- Multiplayer disabled
+            if gui.hitTest(x, y, btn) then
+                if i == 2 then return end
                 activateOption(i)
             end
         end
@@ -435,9 +382,9 @@ function drawButton(btn, optionText, isSelected, glowAmount, buttonIndex)
     local fill = lerpColor(fillBase, fillGlow, glow)
     local border = lerpColor(borderBase, borderGlow, glow)
 
-    drawRoundedRect(btn.x + 3, btn.y + 3, btn.w, btn.h, 20, { 0, 0, 0, 0.4 }, nil, 0)
-    drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 20, fill, nil, 0)
-    drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 20, nil, border, 3)
+    gui.drawRect(btn.x + 3, btn.y + 3, btn.w, btn.h, 20, { 0, 0, 0, 0.4 }, nil, 0)
+    gui.drawRect(btn.x, btn.y, btn.w, btn.h, 20, fill, nil, 0)
+    gui.drawRect(btn.x, btn.y, btn.w, btn.h, 20, nil, border, 3)
 
     if glow > 0.01 and not isDisabled then
         love.graphics.setColor(buttonIndex == 4 and { 1, 0.3, 0.3, glow * 0.5 } or { 1, 0.75, 0.3, glow * 0.5 })
@@ -710,7 +657,7 @@ end
 
 handleCreateWorldClick = function(x, y)
     for _, btn in ipairs(createButtons) do
-        if pointInRect(x, y, btn) then
+        if gui.hitTest(x, y, btn) then
             if btn.id == "name" then nameFieldFocused = true
             elseif btn.id == "seed" then nameFieldFocused = false
             elseif btn.id == "survival" then createGamemode = "survival"
